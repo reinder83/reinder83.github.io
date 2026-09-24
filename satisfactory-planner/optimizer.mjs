@@ -1,12 +1,2 @@
-import loadHighs from './highs.mjs';
-const highs=await loadHighs({locateFile:name=>new URL(name,import.meta.url).href});
-export function solve(model){
- const names=Object.keys(model.variables),vars=names.map((_,i)=>'v'+i);
- const expression=key=>names.map((n,i)=>[model.variables[n][key]||0,vars[i]]).filter(([q])=>q!==0).map(([q,n])=>`${q<0?'-':'+'} ${Math.abs(q)} ${n}`).join(' ')||'0 v0';
- const lines=[model.opType==='max'?'Maximize':'Minimize','objective: '+expression(model.optimize),'Subject To'];let i=0;
- for(const [key,b] of Object.entries(model.constraints)){const e=expression(key);if(b.equal!==undefined)lines.push(`c${i++}: ${e} = ${b.equal}`);else{if(b.min!==undefined)lines.push(`c${i++}: ${e} >= ${b.min}`);if(b.max!==undefined)lines.push(`c${i++}: ${e} <= ${b.max}`);}}
- lines.push('Bounds',...names.map((n,i)=>model.bounds?.[n]!==undefined?`0 <= ${vars[i]} <= ${model.bounds[n]}`:vars[i]+' >= 0'));
- const integers=names.map((n,i)=>model.ints?.[n]?vars[i]:null).filter(Boolean);if(integers.length)lines.push('Generals',integers.join(' '));lines.push('End');
- const r=highs.solve(lines.join('\n'),{output_flag:false,time_limit:3});
- return {solverStatus:r.Status,feasible:r.Status==='Optimal',bounded:r.Status==='Optimal',...Object.fromEntries(names.map((n,i)=>[n,r.Columns?.[vars[i]]?.Primal||0]))};
-}
+import c from"./highs.mjs";const f=await c({locateFile:i=>new URL(i,import.meta.url).href});function $(i){const a=Object.keys(i.variables),o=a.map((t,e)=>"v"+e),l=t=>a.map((e,n)=>[i.variables[e][t]||0,o[n]]).filter(([e])=>e!==0).map(([e,n])=>`${e<0?"-":"+"} ${Math.abs(e)} ${n}`).join(" ")||"0 v0",s=[i.opType==="max"?"Maximize":"Minimize","objective: "+l(i.optimize),"Subject To"];let r=0;for(const[t,e]of Object.entries(i.constraints)){const n=l(t);e.equal!==void 0?s.push(`c${r++}: ${n} = ${e.equal}`):(e.min!==void 0&&s.push(`c${r++}: ${n} >= ${e.min}`),e.max!==void 0&&s.push(`c${r++}: ${n} <= ${e.max}`))}s.push("Bounds",...a.map((t,e)=>i.bounds?.[t]!==void 0?`0 <= ${o[e]} <= ${i.bounds[t]}`:o[e]+" >= 0"));const p=a.map((t,e)=>i.ints?.[t]?o[e]:null).filter(Boolean);p.length&&s.push("Generals",p.join(" ")),s.push("End");const u=f.solve(s.join(`
+`),{output_flag:!1,time_limit:3});return{solverStatus:u.Status,feasible:u.Status==="Optimal",bounded:u.Status==="Optimal",...Object.fromEntries(a.map((t,e)=>[t,u.Columns?.[o[e]]?.Primal||0]))}}export{$ as solve};
