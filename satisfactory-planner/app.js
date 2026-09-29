@@ -641,8 +641,8 @@ import{browserMode as e,browserRequest as t}from"./browser-api.js";import{readSt
       Their ore and their power are already spent in your world, so the resource budgets and the
       spare-power figure should be entered net of them — the same rule that makes "spare existing
       power" spare.
-    `,-1),t[4]||=L(),n.value.dropped.length?(M(),N(`p`,TI,[F(`b`,null,`Phase `+E(n.value.dropped.join(` and `)),1),L(` could not be fitted to whole machines while
-      crediting them, so
+    `,-1),t[4]||=L(),n.value.dropped.length?(M(),N(`p`,TI,[F(`b`,null,E(n.value.dropped.length>1?`Phases`:`Phase`)+` `+E(n.value.dropped.join(` and `)),1),L(`
+      could not be fitted to whole machines while crediting them, so
       `+E(n.value.dropped.length>1?`those phases are`:`that phase is`)+` planned as if you built
       all of it yourself. Nothing is lost — the plan is simply the larger one. Exact ratios instead
       of whole machines usually keeps the credit.
