@@ -1,0 +1,1 @@
+function l(e,a){if(!e)return;const o=Number(e.settings.phase||1);return Object.entries(e.stages).filter(([t])=>Number(t)>=o).map(([t,n])=>{const r=n?.rows||[];return{phase:t,done:r.filter(s=>a["calc-"+t+"-"+s.id]).length,total:r.length}})}const f=e=>e.plan&&e.payoff?.planCreatedAt===e.plan.createdAt?e.payoff:null;export{f as currentPayoff,l as phaseProgress};
