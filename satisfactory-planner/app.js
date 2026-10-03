@@ -117,7 +117,7 @@ import{readStoredData as e}from"./browser-store.js";import{firstPlanPhase as t,m
       Tick the parts this group makes for itself, next to the lines that use them, rather than
       bringing them in from a central line. Saving does not change the plan: a recalculation you
       start does.
-    `,8,Nv),n[3]||=L(),s.value.length?(M(),N(j,{key:1},[F(`div`,Fv,[(M(!0),N(j,null,A(s.value,e=>(M(),N(`label`,{key:e.item,class:`on-site-item`},[F(`input`,{type:`checkbox`,"data-on-site-item":e.item,checked:a.value.includes(e.item),onChange:t=>l(e.item,t.target.checked)},null,40,Iv),I(Fl,{name:e.item},null,8,[`name`]),F(`span`,null,[L(T(e.item),1),e.note?(M(),N(`small`,Lv,T(e.note),1)):R(``,!0)])]))),128))]),n[1]||=L(),F(`div`,Rv,[F(`button`,{class:`btn primary`,type:`button`,"data-on-site-save":e.groupId,"aria-label":`Save made on site for `+e.groupName,disabled:!o.value,onClick:u},`
+    `,8,Nv),n[3]||=L(),s.value.length?(M(),N(j,{key:1},[F(`div`,Fv,[(M(!0),N(j,null,A(s.value,e=>(M(),N(`label`,{key:e.item,class:`on-site-item`},[F(`input`,{type:`checkbox`,"data-on-site-item":e.item,checked:a.value.includes(e.item),onChange:t=>l(e.item,t.target.checked)},null,40,Iv),I(Fl,{name:e.item},null,8,[`name`]),F(`span`,null,[L(T(e.item),1),e.note?(M(),N(`small`,Lv,T(` `+e.note),1)):R(``,!0)])]))),128))]),n[1]||=L(),F(`div`,Rv,[F(`button`,{class:`btn primary`,type:`button`,"data-on-site-save":e.groupId,"aria-label":`Save made on site for `+e.groupName,disabled:!o.value,onClick:u},`
           Save
         `,8,zv),n[0]||=L(),o.value?(M(),N(`span`,Bv,`Not saved yet.`)):R(``,!0)])],64)):(M(),N(`p`,Pv,`
       None of this group's lines uses a part the plan makes.
