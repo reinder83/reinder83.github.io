@@ -1,0 +1,2 @@
+const i=8,u=36e5;function a(l=Date.now){const e=new Map,o=(t,r)=>t+`
+`+JSON.stringify(r);return{keep(t,r,s){const n=o(t,r);for(e.delete(n),e.set(n,{plan:structuredClone(s),at:l()});e.size>8;)e.delete(e.keys().next().value)},take(t,r){const s=o(t,r),n=e.get(s);return n?l()-n.at>36e5?(e.delete(s),null):structuredClone(n.plan):null}}}export{i as REVIEWED_PLANS,u as REVIEWED_PLAN_MS,a as reviewedPlans};
