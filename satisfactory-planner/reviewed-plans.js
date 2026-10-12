@@ -1,2 +1,2 @@
-const i=8,u=36e5;function a(l=Date.now){const e=new Map,o=(t,r)=>t+`
-`+JSON.stringify(r);return{keep(t,r,s){const n=o(t,r);for(e.delete(n),e.set(n,{plan:structuredClone(s),at:l()});e.size>8;)e.delete(e.keys().next().value)},take(t,r){const s=o(t,r),n=e.get(s);return n?l()-n.at>36e5?(e.delete(s),null):structuredClone(n.plan):null}}}export{i as REVIEWED_PLANS,u as REVIEWED_PLAN_MS,a as reviewedPlans};
+const o=8,u=36e5;function i(s=Date.now){const e=new Map,l=(t,n)=>t+`
+`+JSON.stringify(n);return{keep(t,n,a){const r=l(t,n);for(e.delete(r),e.set(r,{plan:structuredClone(a),at:s()});e.size>8;)e.delete(e.keys().next().value)},take(t,n){const a=l(t,n),r=e.get(a);return r?s()-r.at>36e5?(e.delete(a),null):structuredClone(r.plan):null}}}function p(s,e,l,t){const n=s.take(e,l);return n&&typeof t=="string"&&Date.parse(n.createdAt)>Date.parse(t)?n:null}export{o as REVIEWED_PLANS,u as REVIEWED_PLAN_MS,i as reviewedPlans,p as reviewedReplacement};
