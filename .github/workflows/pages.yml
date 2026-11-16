@@ -24,6 +24,7 @@ jobs:
           mkdir _site
           cp index.html _site/
           if [ -d satisfactory-planner ]; then cp -R satisfactory-planner _site/; fi
+          if [ -d ferrite-frontier ]; then cp -R ferrite-frontier _site/; fi
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         with:
           path: _site
