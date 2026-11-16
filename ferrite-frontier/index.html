@@ -96,6 +96,7 @@ img.ico { display: inline-block; vertical-align: middle; image-rendering: auto; 
 .icon-btn:hover { color: var(--text); }
 .icon-btn svg { width: 18px; height: 18px; }
 .icon-btn.is-off { color: var(--text-3); }
+.music-btn svg { width: 16px; height: 16px; }
 .speed-btn { width: 44px; padding: 0; font-family: var(--font-mono); }
 
 .eyebrow { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--teal-2); }
@@ -105,7 +106,7 @@ img.ico { display: inline-block; vertical-align: middle; image-rendering: auto; 
 .title-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .title-veil { position: absolute; inset: 0; background:
   radial-gradient(ellipse at 50% 45%, rgba(17, 14, 24, 0.5) 0%, rgba(17, 14, 24, 0.84) 60%, rgba(17, 14, 24, 0.97) 100%); }
-.title-top { position: absolute; top: 12px; right: 12px; z-index: 2; }
+.title-top { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; gap: 6px; }
 .title-card { position: relative; z-index: 1; text-align: center; max-width: 560px; }
 .logo { margin: 10px 0 8px; font-family: var(--font-display); font-weight: 800; line-height: 0.9; letter-spacing: 0.04em; text-transform: uppercase;
   font-size: clamp(54px, 16vw, 112px); display: flex; flex-direction: column; align-items: center; }
@@ -1129,100 +1130,381 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
 
 </script>
 <script>
-/* ---- src/levels.dev.js ---- */
-// DEV-ONLY sample levels for UI testing (Pixel). build.mjs includes this ONLY when src/levels.js is missing.
+/* ---- src/levels.js ---- */
+// Ferrite Frontier — contracts c01-c10, "Act I: Landfall" (owner: Atlas). Classic script, pure data. Defines FF.levels.
+// Later acts and challenge packs append to this list, so this file must load first.
+// Format: docs/SPEC.md "Level format". dir: 0 = N, 1 = E, 2 = S, 3 = W (a building's output side).
+// Every `solution` is the reference build; tests/levels.test.mjs runs it through the engine and checks
+// that it completes the contract and that its score equals `par`.
 var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalThis.FF || {});
+
 FF.levels = [
   {
-    id: 'd01', name: 'Dev: First Pour',
-    brief: 'Sample level. Mine ferrite ore, smelt it into bars and deliver them to the terminal.',
-    hint: 'Miner on the F node facing right, a belt, a smelter, then belts to the terminal.',
-    w: 8, h: 5,
+    id: 'c01', chapter: 'Act I: Landfall', name: 'First Pour',
+    brief: 'Welcome to Kessa-4, contractor: there is ferrite in the ground and a terminal that wants 30 bars a minute. Meridian supplied the planet; the rest is on you.',
+    hint: 'Miner on the ore node, a smelter next, then belts into the terminal. Buildings that touch hand items straight to each other.',
+    w: 7, h: 5,
     map: [
-      '........',
-      '.F....T.',
-      '........',
-      '..#.....',
-      '........',
+      '.......',
+      '.F.....',
+      '...##..',
+      '.....T.',
+      '.......',
     ],
     unlocks: ['belt', 'miner', 'smelter'],
     recipes: ['ferrite_bar'],
     goal: { item: 'ferrite_bar', rate: 30 },
     powerCap: null,
-    par: { cells: 5, cost: 12, power: 9 },
+    par: { cells: 6, cost: 13, power: 9 },
     solution: [
       { type: 'miner', x: 1, y: 1, dir: 1 },
-      { type: 'belt', x: 2, y: 1, dir: 1 },
-      { type: 'smelter', x: 3, y: 1, dir: 1, recipe: 'ferrite_bar' },
-      { type: 'belt', x: 4, y: 1, dir: 1 },
-      { type: 'belt', x: 5, y: 1, dir: 1 },
+      { type: 'smelter', x: 2, y: 1, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'belt', x: 2, y: 2, dir: 2 },
+      { type: 'belt', x: 2, y: 3, dir: 1 },
+      { type: 'belt', x: 3, y: 3, dir: 1 },
+      { type: 'belt', x: 4, y: 3, dir: 1 },
     ],
     tutorial: [
-      'Pick a building from the toolbar (or press 1-3), then click a cell to place it.',
+      'Pick a building from the toolbar, then click a cell to place it. Miners only fit on ore nodes.',
+      'Every building pushes items out of its front. Q / E rotate, X or right-click removes.',
       'Drag with the belt tool to lay a whole line; it turns corners for you.',
-      'Q / E rotate, right-click removes, Space pauses, F runs at 3x.',
+      'The contract closes once the terminal rate holds at the target for a few seconds.',
     ],
   },
   {
-    id: 'd02', name: 'Dev: Plate Run',
-    brief: 'Sample level. Turn ferrite bars into plates and deliver 20 per minute.',
-    hint: 'One miner feeds one smelter feeds one constructor set to Plate.',
-    w: 9, h: 5,
+    id: 'c02', chapter: 'Act I: Landfall', name: 'Flat Rate',
+    brief: 'Dispatch wants plate, 40 a minute. A press eats three bars and hands back two plates, which accounting calls efficiency and you may call whatever you like.',
+    hint: 'One ore node only makes 20 plates a minute. Run a second line from the other node and let both pour onto the same belt.',
+    w: 8, h: 5,
     map: [
-      '.........',
-      '.F.......',
-      '.....#...',
-      '.......T.',
-      '.........',
+      '........',
+      '.F...#..',
+      '......T.',
+      '.F...#..',
+      '........',
     ],
     unlocks: ['belt', 'miner', 'smelter', 'constructor'],
-    recipes: ['ferrite_bar', 'plate', 'rod'],
-    goal: { item: 'plate', rate: 20 },
+    recipes: ['ferrite_bar', 'plate'],
+    goal: { item: 'plate', rate: 40 },
     powerCap: null,
-    par: { cells: 8, cost: 20, power: 13 },
+    par: { cells: 9, cost: 33, power: 26 },
     solution: [
       { type: 'miner', x: 1, y: 1, dir: 1 },
+      { type: 'miner', x: 1, y: 3, dir: 1 },
       { type: 'smelter', x: 2, y: 1, dir: 1, recipe: 'ferrite_bar' },
-      { type: 'belt', x: 3, y: 1, dir: 1 },
-      { type: 'constructor', x: 4, y: 1, dir: 1, recipe: 'plate' },
+      { type: 'smelter', x: 2, y: 3, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 1, dir: 2, recipe: 'plate' },
+      { type: 'constructor', x: 3, y: 3, dir: 0, recipe: 'plate' },
+      { type: 'belt', x: 3, y: 2, dir: 1 },
+      { type: 'belt', x: 4, y: 2, dir: 1 },
+      { type: 'belt', x: 5, y: 2, dir: 1 },
+    ],
+    tutorial: [
+      'Constructors turn bars into parts. A plate press takes 30 bars/min and gives back only 20 plates/min.',
+      'Watch the rate meter: one line stalls at 20, so put both ore nodes to work.',
+      'A belt accepts items from behind and from both sides, so two lines can join on one belt.',
+    ],
+  },
+  {
+    id: 'c03', chapter: 'Act I: Landfall', name: 'Fork in the Line',
+    brief: 'Rod stock, 30 a minute, from the one node survey bothered to find. A rod press only chews through half a smelter\'s output, and the splitter in your kit is not a decoration.',
+    hint: 'Send the smelter into a splitter, put a rod press on two of its outputs, then bring both streams to the terminal.',
+    w: 8, h: 5,
+    map: [
+      '........',
+      '...#....',
+      '.F....T.',
+      '....#...',
+      '........',
+    ],
+    unlocks: ['belt', 'miner', 'smelter', 'constructor', 'splitter'],
+    recipes: ['ferrite_bar', 'plate', 'rod'],
+    goal: { item: 'rod', rate: 30 },
+    powerCap: null,
+    par: { cells: 8, cost: 26, power: 17 },
+    solution: [
+      { type: 'miner', x: 1, y: 2, dir: 1 },
+      { type: 'smelter', x: 2, y: 2, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 4, y: 1, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 5, y: 2, dir: 1, recipe: 'rod' },
+      { type: 'splitter', x: 4, y: 2, dir: 1 },
       { type: 'belt', x: 5, y: 1, dir: 1 },
       { type: 'belt', x: 6, y: 1, dir: 2 },
-      { type: 'belt', x: 6, y: 2, dir: 2 },
-      { type: 'belt', x: 6, y: 3, dir: 1 },
+      { type: 'belt', x: 3, y: 2, dir: 1 },
+    ],
+    tutorial: [
+      'Click a placed constructor to change its recipe. Presses start on Plate; this contract wants Rod.',
+      'A rod press uses 15 bars/min, so one smelter can feed two of them.',
+      'Splitters take items in at the back and deal them evenly to the front, left and right, skipping any side that is blocked or empty.',
+      'When a belt backs up nothing is lost: the machines upstream simply wait.',
+    ],
+  },
+  {
+    id: 'c04', chapter: 'Act I: Landfall', name: 'Thread Count',
+    brief: 'The build crews go through bolts like rations: 100 a minute. A lathe turns one rod into four bolts and is never the slow part; keeping three of them fed is.',
+    hint: 'One smelter feeds two rod presses, and their rods keep three lathes busy. A plain belt tops out at 60 a minute, so deliver into more than one side of the terminal.',
+    w: 9, h: 6,
+    map: [
+      '.........',
+      '.F...#...',
+      '.........',
+      '...#..T..',
+      '.........',
+      '.........',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor'],
+    recipes: ['ferrite_bar', 'rod', 'bolts'],
+    goal: { item: 'bolts', rate: 100 },
+    powerCap: null,
+    par: { cells: 12, cost: 46, power: 29 },
+    solution: [
+      { type: 'miner', x: 1, y: 1, dir: 1 },
+      { type: 'smelter', x: 3, y: 2, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 5, y: 2, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 6, y: 2, dir: 2, recipe: 'bolts' },
+      { type: 'constructor', x: 5, y: 3, dir: 1, recipe: 'bolts' },
+      { type: 'constructor', x: 4, y: 4, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 6, y: 4, dir: 0, recipe: 'bolts' },
+      { type: 'splitter', x: 4, y: 2, dir: 1 },
+      { type: 'splitter', x: 5, y: 4, dir: 1 },
+      { type: 'belt', x: 2, y: 1, dir: 2 },
+      { type: 'belt', x: 2, y: 2, dir: 1 },
+      { type: 'belt', x: 4, y: 3, dir: 2 },
+    ],
+    tutorial: [
+      'Recipes chain: bars to rods to bolts. Each lathe eats 10 rods/min and makes 40 bolts/min.',
+      'A belt carries 60 items/min, the new fast belt 120. The terminal takes deliveries on all four sides.',
+      'Mergers join up to three lines fairly. Hover a machine to see if it is working, starved or blocked.',
+    ],
+  },
+  {
+    id: 'c05', chapter: 'Act I: Landfall', name: 'Teal Seam',
+    brief: 'Survey found cuprite, and naturally the two seams sit on opposite sides of a rock ridge. Wire, 90 a minute; the ridge stays, because moving it is not in your budget.',
+    hint: 'A wire drawer turns 15 copper bars into 30 wire, so one smelter can run two drawers. You need three drawers in all, and 90 a minute will not ride one plain belt.',
+    w: 8, h: 7,
+    map: [
+      'C...#...',
+      '....#...',
+      '..#.....',
+      '..#..T..',
+      '.....#..',
+      '.##....C',
+      '........',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor'],
+    recipes: ['copper_bar', 'wire'],
+    goal: { item: 'wire', rate: 90 },
+    powerCap: null,
+    par: { cells: 13, cost: 43, power: 30 },
+    solution: [
+      { type: 'miner', x: 0, y: 0, dir: 1 },
+      { type: 'miner', x: 7, y: 5, dir: 0 },
+      { type: 'smelter', x: 1, y: 0, dir: 1, recipe: 'copper_bar' },
+      { type: 'smelter', x: 7, y: 4, dir: 0, recipe: 'copper_bar' },
+      { type: 'constructor', x: 4, y: 2, dir: 2, recipe: 'wire' },
+      { type: 'constructor', x: 3, y: 3, dir: 1, recipe: 'wire' },
+      { type: 'constructor', x: 7, y: 3, dir: 3, recipe: 'wire' },
+      { type: 'splitter', x: 3, y: 2, dir: 2 },
+      { type: 'belt', x: 2, y: 0, dir: 1 },
+      { type: 'belt', x: 3, y: 0, dir: 2 },
+      { type: 'belt', x: 3, y: 1, dir: 2 },
+      { type: 'belt', x: 4, y: 3, dir: 1 },
+      { type: 'belt', x: 6, y: 3, dir: 3 },
+    ],
+    tutorial: [
+      'Cuprite smelts into copper bars. A wire drawer takes 15 bars/min and makes 30 wire/min.',
+    ],
+  },
+  {
+    id: 'c06', chapter: 'Act I: Landfall', name: 'Brace Yourself',
+    brief: 'First assembler job: braced plates, 5 a minute, each one 3 plates and 6 bolts. Two supply chains have to arrive at the same machine, so try to make it look deliberate.',
+    hint: 'One press makes enough plate and one lathe enough bolts. Count the bars carefully and a single ore node, split two ways, covers all of it.',
+    w: 8, h: 6,
+    map: [
+      '........',
+      '.F...#..',
+      '........',
+      '..#...T.',
+      '.F......',
+      '....#...',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'plate', 'rod', 'bolts', 'braced_plate'],
+    goal: { item: 'braced_plate', rate: 5 },
+    powerCap: null,
+    par: { cells: 8, cost: 40, power: 36 },
+    solution: [
+      { type: 'miner', x: 1, y: 4, dir: 1 },
+      { type: 'smelter', x: 2, y: 4, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 3, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 4, y: 3, dir: 1, recipe: 'bolts' },
+      { type: 'constructor', x: 4, y: 4, dir: 1, recipe: 'plate' },
+      { type: 'assembler', x: 5, y: 3, dir: 1, recipe: 'braced_plate' },
+      { type: 'splitter', x: 3, y: 4, dir: 1 },
+      { type: 'belt', x: 5, y: 4, dir: 0 },
+    ],
+    tutorial: [
+      'Assemblers combine two different parts. Feed them through the back or either side; the result leaves by the front.',
+      'A full machine just waits, so it is fine to supply more than a recipe needs.',
+    ],
+  },
+  {
+    id: 'c07', chapter: 'Act I: Landfall', name: 'Elbow Room',
+    brief: 'Same order as before, 100 bolts a minute, on a claim the size of a supply closet where the rocks have seniority. Machines that touch hand off directly; out here belts are a luxury.',
+    hint: 'Skip belts wherever a machine can face the next machine, and let the lathes unload straight into different sides of the terminal.',
+    w: 6, h: 5,
+    map: [
+      '..#...',
+      'F....#',
+      '.#....',
+      '....T.',
+      '#.....',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor'],
+    recipes: ['ferrite_bar', 'rod', 'bolts'],
+    goal: { item: 'bolts', rate: 100 },
+    powerCap: null,
+    par: { cells: 12, cost: 46, power: 29 },
+    solution: [
+      { type: 'miner', x: 0, y: 1, dir: 2 },
+      { type: 'smelter', x: 1, y: 3, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 2, y: 2, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 4, y: 2, dir: 2, recipe: 'bolts' },
+      { type: 'constructor', x: 3, y: 3, dir: 1, recipe: 'bolts' },
+      { type: 'constructor', x: 2, y: 4, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 3, y: 4, dir: 1, recipe: 'bolts' },
+      { type: 'splitter', x: 3, y: 2, dir: 1 },
+      { type: 'splitter', x: 2, y: 3, dir: 1 },
+      { type: 'belt', x: 0, y: 2, dir: 2 },
+      { type: 'belt', x: 0, y: 3, dir: 1 },
+      { type: 'belt', x: 4, y: 4, dir: 0 },
     ],
     tutorial: [],
   },
   {
-    id: 'd03', name: 'Dev: Live Wire',
-    brief: 'Sample level with a power budget. Deliver 30 wire per minute on 15 MW.',
-    hint: 'Copper bars into a constructor set to Wire.',
-    w: 8, h: 6,
+    id: 'c08', chapter: 'Act I: Landfall', name: 'Brownout',
+    brief: 'This outpost runs on one tired reactor: 70 MW, no exceptions, and dispatch still wants 8 braced plates a minute. There are three ore nodes on the plot and power to mine about two of them.',
+    hint: 'Two assemblers need roughly 36 bars of plate work and 12 bars of rod work a minute. That fits in two smelters if one of them is shared between a plate press and the rod press.',
+    w: 10, h: 6,
     map: [
-      '........',
-      '.C..#...',
-      '....#...',
-      '........',
-      '......T.',
-      '........',
+      '..........',
+      '.F...#....',
+      '.......T..',
+      '..#.......',
+      '.F......F.',
+      '....#.....',
     ],
-    unlocks: ['belt', 'belt2', 'miner', 'smelter', 'constructor', 'splitter', 'merger'],
-    recipes: ['copper_bar', 'wire'],
-    goal: { item: 'wire', rate: 30 },
-    powerCap: 15,
-    par: { cells: 8, cost: 20, power: 13 },
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'plate', 'rod', 'bolts', 'braced_plate'],
+    goal: { item: 'braced_plate', rate: 8 },
+    powerCap: 70,
+    par: { cells: 16, cost: 75, power: 68 },
     solution: [
-      { type: 'miner', x: 1, y: 1, dir: 2 },
-      { type: 'smelter', x: 1, y: 2, dir: 2, recipe: 'copper_bar' },
-      { type: 'belt', x: 1, y: 3, dir: 1 },
-      { type: 'constructor', x: 2, y: 3, dir: 1, recipe: 'wire' },
-      { type: 'belt', x: 3, y: 3, dir: 1 },
-      { type: 'belt', x: 4, y: 3, dir: 1 },
-      { type: 'belt', x: 5, y: 3, dir: 2 },
-      { type: 'belt', x: 5, y: 4, dir: 1 },
+      { type: 'miner', x: 1, y: 4, dir: 1 },
+      { type: 'miner', x: 8, y: 4, dir: 0 },
+      { type: 'smelter', x: 8, y: 3, dir: 3, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 2, y: 4, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 3, dir: 1, recipe: 'plate' },
+      { type: 'constructor', x: 5, y: 3, dir: 3, recipe: 'bolts' },
+      { type: 'constructor', x: 7, y: 3, dir: 3, recipe: 'plate' },
+      { type: 'constructor', x: 4, y: 4, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 6, y: 4, dir: 0, recipe: 'bolts' },
+      { type: 'assembler', x: 4, y: 3, dir: 0, recipe: 'braced_plate' },
+      { type: 'assembler', x: 6, y: 3, dir: 0, recipe: 'braced_plate' },
+      { type: 'splitter', x: 3, y: 4, dir: 1 },
+      { type: 'splitter', x: 5, y: 4, dir: 1 },
+      { type: 'belt', x: 4, y: 2, dir: 1 },
+      { type: 'belt', x: 5, y: 2, dir: 1 },
+      { type: 'belt', x: 6, y: 2, dir: 1 },
+    ],
+    tutorial: [
+      'The power meter counts every placed machine, busy or not. Belts, splitters and mergers draw nothing.',
+    ],
+  },
+  {
+    id: 'c09', chapter: 'Act I: Landfall', name: 'Wound Up',
+    brief: 'Coils, 12 a minute: rod from the ferrite seam, wire from the cuprite seam, and the seams are in opposite corners. Belts cannot cross each other, so somebody has to think, and dispatch has nominated you.',
+    hint: 'Use two assemblers, each with its own rod press and wire drawer. Bring ferrite around one side of the terminal and cuprite around the other, and deliver from above and below.',
+    w: 9, h: 5,
+    map: [
+      '#F.......',
+      '..#......',
+      '....T....',
+      '......#..',
+      '.......C#',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'copper_bar', 'rod', 'wire', 'coil'],
+    goal: { item: 'coil', rate: 12 },
+    powerCap: null,
+    par: { cells: 16, cost: 70, power: 64 },
+    solution: [
+      { type: 'miner', x: 1, y: 0, dir: 1 },
+      { type: 'miner', x: 7, y: 4, dir: 3 },
+      { type: 'smelter', x: 2, y: 0, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 6, y: 4, dir: 3, recipe: 'copper_bar' },
+      { type: 'constructor', x: 4, y: 0, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 3, y: 1, dir: 2, recipe: 'rod' },
+      { type: 'constructor', x: 5, y: 3, dir: 0, recipe: 'wire' },
+      { type: 'constructor', x: 4, y: 4, dir: 3, recipe: 'wire' },
+      { type: 'assembler', x: 3, y: 2, dir: 1, recipe: 'coil' },
+      { type: 'assembler', x: 5, y: 2, dir: 3, recipe: 'coil' },
+      { type: 'splitter', x: 3, y: 0, dir: 1 },
+      { type: 'splitter', x: 5, y: 4, dir: 3 },
+      { type: 'belt', x: 5, y: 0, dir: 2 },
+      { type: 'belt', x: 5, y: 1, dir: 2 },
+      { type: 'belt', x: 3, y: 3, dir: 0 },
+      { type: 'belt', x: 3, y: 4, dir: 0 },
+    ],
+    tutorial: [],
+  },
+  {
+    id: 'c10', chapter: 'Act I: Landfall', name: 'Housing Crisis',
+    brief: 'The big one: motor housings, 3 a minute, each a braced plate and two coils. Three kinds of assembler, two ores, one 100 MW reactor, and everything Kessa-4 has taught you so far.',
+    hint: 'Think of it as three small factories: a braced-plate cell and a coil line, both feeding the final assembler. Coils alone eat 12 rods a minute, so one rod press is not enough.',
+    w: 12, h: 8,
+    map: [
+      '............',
+      '.F......#...',
+      '............',
+      '...#......T.',
+      '.F..........',
+      '......#.....',
+      '....C.......',
+      '............',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'copper_bar', 'plate', 'rod', 'bolts', 'wire', 'braced_plate', 'coil', 'motor_housing'],
+    goal: { item: 'motor_housing', rate: 3 },
+    powerCap: 100,
+    par: { cells: 21, cost: 95, power: 92 },
+    solution: [
+      { type: 'miner', x: 1, y: 1, dir: 1 },
+      { type: 'miner', x: 1, y: 4, dir: 1 },
+      { type: 'miner', x: 4, y: 6, dir: 1 },
+      { type: 'smelter', x: 2, y: 1, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 2, y: 4, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 5, y: 6, dir: 0, recipe: 'copper_bar' },
+      { type: 'constructor', x: 4, y: 1, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 5, y: 1, dir: 2, recipe: 'bolts' },
+      { type: 'constructor', x: 3, y: 2, dir: 1, recipe: 'plate' },
+      { type: 'constructor', x: 4, y: 4, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 5, y: 5, dir: 0, recipe: 'wire' },
+      { type: 'assembler', x: 5, y: 2, dir: 2, recipe: 'braced_plate' },
+      { type: 'assembler', x: 5, y: 3, dir: 1, recipe: 'motor_housing' },
+      { type: 'assembler', x: 5, y: 4, dir: 0, recipe: 'coil' },
+      { type: 'splitter', x: 3, y: 1, dir: 1 },
+      { type: 'belt', x: 4, y: 2, dir: 1 },
+      { type: 'belt', x: 6, y: 3, dir: 1 },
+      { type: 'belt', x: 7, y: 3, dir: 1 },
+      { type: 'belt', x: 8, y: 3, dir: 1 },
+      { type: 'belt', x: 9, y: 3, dir: 1 },
+      { type: 'belt', x: 3, y: 4, dir: 1 },
     ],
     tutorial: [],
   },
 ];
+
 if (typeof module !== 'undefined') module.exports = FF.levels;
 
 </script>
@@ -2518,6 +2800,1103 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
 
 </script>
 <script>
+/* ---- src/art-fx.js ---- */
+// Ferrite Frontier — art-fx.js (owner: Iris)
+// Moment-to-moment effects: pooled particles, contract celebration, chapter banners, par medals.
+// Classic script. Reads colours from FF.art.palette when available. Never allocates in update()/draw()
+// for particles (typed-array pool, sprites created once on first use).
+var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalThis.FF || {});
+
+(function () {
+  'use strict';
+
+  var TAU = Math.PI * 2, HALF_PI = Math.PI / 2;
+
+  // ---------------------------------------------------------------- shared helpers
+  function contextScale(ctx) {
+    if (ctx && ctx.getTransform) {
+      try {
+        var matrix = ctx.getTransform();
+        var scale = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
+        return scale > 0 ? Math.min(scale, 4) : 1;
+      } catch (error) { /* ignore */ }
+    }
+    return 1;
+  }
+  function makeCanvas(width, height) {
+    try {
+      if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
+      if (typeof document !== 'undefined' && document.createElement) {
+        var canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        return canvas;
+      }
+    } catch (error) { /* no offscreen canvas: callers fall back to direct drawing */ }
+    return null;
+  }
+  function hexToRgb(hex) {
+    var value = parseInt(String(hex).replace('#', ''), 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  }
+  function rgbaString(rgb, alpha) { return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + alpha + ')'; }
+  function noise(index) { var value = Math.sin(index * 12.9898 + 78.233) * 43758.5453; return value - Math.floor(value); }
+  function makeRandom(seed) { // deterministic, only used while painting cached static layers
+    var state = seed | 0;
+    return function () {
+      state = (state + 0x6D2B79F5) | 0;
+      var mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+      mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+      return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function polygon(ctx, points) {
+    ctx.beginPath(); ctx.moveTo(points[0], points[1]);
+    for (var index = 2; index < points.length; index += 2) ctx.lineTo(points[index], points[index + 1]);
+    ctx.closePath();
+  }
+  function circle(ctx, x, y, radius) { ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); }
+  function clamp01(value) { return value < 0 ? 0 : value > 1 ? 1 : value; }
+
+  function paletteColor(name, fallback) {
+    var palette = FF.art && FF.art.palette;
+    return (palette && typeof palette[name] === 'string') ? palette[name] : fallback;
+  }
+
+  // ---------------------------------------------------------------- settings
+  var reducedMotion = false;
+  try {
+    if (typeof matchMedia === 'function') reducedMotion = !!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (error) { reducedMotion = false; }
+  var cellSize = 40; // effect scale; the UI keeps this in sync with the board cell size
+
+  // ---------------------------------------------------------------- colour table (built once, lazily)
+  var ITEM_TYPES = ['ferrite_ore', 'cuprite_ore', 'ferrite_bar', 'copper_bar', 'plate', 'rod', 'bolts', 'wire', 'braced_plate', 'coil', 'motor_housing'];
+  var COLOR = { amber: 0, amberHi: 1, teal: 2, tealHi: 3, good: 4, white: 5, dust: 6, smoke: 7, bad: 8, steel: 9, steelDark: 10, firstItem: 11 };
+  var colorStrings = null, colorRgb = null, softSprites = null, glyphSprites = null;
+  var GLYPH_SPRITE_PIXELS = 56, SOFT_SPRITE_PIXELS = 64;
+
+  function ensureColors() {
+    if (colorStrings) return;
+    var base = [
+      paletteColor('amber', '#f4a93c'), paletteColor('amberHi', '#ffd08a'), paletteColor('teal', '#3fd0c4'), paletteColor('tealHi', '#a8f4ec'),
+      paletteColor('good', '#62e39b'), '#fff4e2', '#6e6390', '#a69ebb', paletteColor('bad', '#ff5b4e'), '#9aa4b1', '#4b5468'
+    ];
+    var itemColors = (FF.art && FF.art.palette && FF.art.palette.items) || {};
+    for (var index = 0; index < ITEM_TYPES.length; index++) base.push(itemColors[ITEM_TYPES[index]] || '#b9b2cc');
+    colorStrings = base;
+    colorRgb = base.map(hexToRgb);
+    softSprites = new Array(base.length);
+    glyphSprites = new Array(ITEM_TYPES.length);
+  }
+  function itemColorIndex(itemType) {
+    var index = ITEM_TYPES.indexOf(itemType);
+    return index < 0 ? COLOR.amber : COLOR.firstItem + index;
+  }
+  // soft round glow sprite per colour (used for puffs, flashes, dust)
+  function softSprite(colorIndex) {
+    var sprite = softSprites[colorIndex];
+    if (sprite !== undefined) return sprite;
+    var canvas = makeCanvas(SOFT_SPRITE_PIXELS, SOFT_SPRITE_PIXELS), spriteCtx = canvas && canvas.getContext('2d');
+    if (!spriteCtx || !spriteCtx.createRadialGradient) { softSprites[colorIndex] = null; return null; }
+    var half = SOFT_SPRITE_PIXELS / 2, rgb = colorRgb[colorIndex];
+    var gradient = spriteCtx.createRadialGradient(half, half, 0, half, half, half);
+    gradient.addColorStop(0, rgbaString(rgb, 1));
+    gradient.addColorStop(0.35, rgbaString(rgb, 0.6));
+    gradient.addColorStop(1, rgbaString(rgb, 0));
+    spriteCtx.fillStyle = gradient;
+    spriteCtx.fillRect(0, 0, SOFT_SPRITE_PIXELS, SOFT_SPRITE_PIXELS);
+    softSprites[colorIndex] = canvas;
+    return canvas;
+  }
+  // item glyph sprite (drawn with FF.art) for confetti and craft pops
+  function glyphSprite(glyphIndexValue) {
+    var sprite = glyphSprites[glyphIndexValue];
+    if (sprite !== undefined) return sprite;
+    var canvas = (FF.art && FF.art.drawItemIcon) ? makeCanvas(GLYPH_SPRITE_PIXELS, GLYPH_SPRITE_PIXELS) : null;
+    var spriteCtx = canvas && canvas.getContext('2d');
+    if (!spriteCtx) { glyphSprites[glyphIndexValue] = null; return null; }
+    FF.art.drawItemIcon(spriteCtx, ITEM_TYPES[glyphIndexValue], GLYPH_SPRITE_PIXELS / 2, GLYPH_SPRITE_PIXELS / 2, GLYPH_SPRITE_PIXELS * 0.86);
+    glyphSprites[glyphIndexValue] = canvas;
+    return canvas;
+  }
+  function prepareSprites() {
+    ensureColors();
+    for (var index = 0; index < ITEM_TYPES.length; index++) glyphSprite(index);
+    softSprite(COLOR.smoke); softSprite(COLOR.dust); softSprite(COLOR.tealHi); softSprite(COLOR.good); softSprite(COLOR.amberHi);
+  }
+
+  // ---------------------------------------------------------------- particle pool
+  var POOL_SIZE = 640;
+  var KIND_NONE = 0, KIND_SPARK = 1, KIND_RING = 2, KIND_PUFF = 3, KIND_FLASH = 4, KIND_STAMP = 5,
+    KIND_CHIP = 6, KIND_CONFETTI = 7, KIND_GLINT = 8, KIND_POP = 9;
+  var kind = new Uint8Array(POOL_SIZE), colorOf = new Uint8Array(POOL_SIZE), glyphOf = new Uint8Array(POOL_SIZE);
+  var positionX = new Float32Array(POOL_SIZE), positionY = new Float32Array(POOL_SIZE);
+  var velocityX = new Float32Array(POOL_SIZE), velocityY = new Float32Array(POOL_SIZE);
+  var age = new Float32Array(POOL_SIZE), lifetime = new Float32Array(POOL_SIZE);
+  var size = new Float32Array(POOL_SIZE), growth = new Float32Array(POOL_SIZE), thickness = new Float32Array(POOL_SIZE);
+  var rotation = new Float32Array(POOL_SIZE), spin = new Float32Array(POOL_SIZE);
+  var drag = new Float32Array(POOL_SIZE), gravity = new Float32Array(POOL_SIZE);
+  var wobble = new Float32Array(POOL_SIZE), opacity = new Float32Array(POOL_SIZE);
+  var nextSlot = 0, liveCount = 0;
+
+  // returns the slot; extra fields can be set by the caller (all reset here)
+  function emit(kindValue, x, y, speedX, speedY, life, startSize, colorIndex, delay) {
+    var slot = -1, probe, tries;
+    for (tries = 0; tries < POOL_SIZE; tries++) {
+      probe = (nextSlot + tries) % POOL_SIZE;
+      if (kind[probe] === KIND_NONE) { slot = probe; break; }
+    }
+    if (slot < 0) slot = nextSlot; // pool full: recycle the oldest-ish slot
+    nextSlot = (slot + 1) % POOL_SIZE;
+    kind[slot] = kindValue; colorOf[slot] = colorIndex; glyphOf[slot] = 0;
+    positionX[slot] = x; positionY[slot] = y; velocityX[slot] = speedX; velocityY[slot] = speedY;
+    age[slot] = -(delay || 0); lifetime[slot] = life;
+    size[slot] = startSize; growth[slot] = 0; thickness[slot] = 1;
+    rotation[slot] = 0; spin[slot] = 0; drag[slot] = 0; gravity[slot] = 0; wobble[slot] = 0; opacity[slot] = 1;
+    liveCount++;
+    return slot;
+  }
+  function randomBetween(low, high) { return low + Math.random() * (high - low); }
+
+  // ---------------------------------------------------------------- spawners
+  function spawnDelivery(x, y) {
+    ensureColors();
+    var unit = cellSize;
+    if (reducedMotion) {
+      var calmRing = emit(KIND_RING, x, y, 0, 0, 0.5, unit * 0.3, COLOR.teal, 0);
+      growth[calmRing] = unit * 0.25; thickness[calmRing] = Math.max(1, unit * 0.05); opacity[calmRing] = 0.7;
+      return;
+    }
+    var flash = emit(KIND_FLASH, x, y, 0, 0, 0.22, unit * 0.55, COLOR.tealHi, 0);
+    opacity[flash] = 0.8;
+    var ring = emit(KIND_RING, x, y, 0, 0, 0.42, unit * 0.22, COLOR.teal, 0);
+    growth[ring] = unit * 0.55; thickness[ring] = Math.max(1, unit * 0.07);
+    var sparkCount = 7, angleOffset = Math.random() * TAU;
+    for (var index = 0; index < sparkCount; index++) {
+      var angle = angleOffset + (index / sparkCount) * TAU + randomBetween(-0.25, 0.25), speed = unit * randomBetween(2.2, 3.6);
+      var spark = emit(KIND_SPARK, x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, randomBetween(0.28, 0.45), Math.max(1, unit * 0.045), index % 2 ? COLOR.amberHi : COLOR.amber, 0);
+      drag[spark] = 5;
+    }
+    var glint = emit(KIND_GLINT, x, y, 0, 0, 0.35, unit * 0.32, COLOR.white, 0.04);
+    thickness[glint] = Math.max(1, unit * 0.04);
+  }
+
+  function spawnCraft(x, y, itemType) {
+    ensureColors();
+    var unit = cellSize, glyphIndexValue = ITEM_TYPES.indexOf(itemType);
+    glyphSprite(glyphIndexValue < 0 ? 0 : glyphIndexValue);
+    if (!reducedMotion) {
+      for (var puffIndex = 0; puffIndex < 4; puffIndex++) {
+        var puff = emit(KIND_PUFF, x + randomBetween(-0.12, 0.12) * unit, y + randomBetween(-0.12, 0.08) * unit,
+          randomBetween(-0.25, 0.25) * unit, randomBetween(-0.7, -0.35) * unit, randomBetween(0.6, 0.9), unit * randomBetween(0.1, 0.14), COLOR.smoke, puffIndex * 0.04);
+        growth[puff] = unit * 0.4; drag[puff] = 1.5; opacity[puff] = 0.45;
+      }
+      for (var sparkIndex = 0; sparkIndex < 4; sparkIndex++) {
+        var angle = -HALF_PI + randomBetween(-1.1, 1.1), speed = unit * randomBetween(1.4, 2.2);
+        var spark = emit(KIND_SPARK, x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, randomBetween(0.25, 0.4), Math.max(1, unit * 0.04), itemColorIndex(itemType), 0);
+        drag[spark] = 5;
+      }
+    }
+    if (glyphIndexValue >= 0) {
+      var pop = emit(KIND_POP, x, y - unit * 0.1, 0, reducedMotion ? 0 : -unit * 0.45, reducedMotion ? 0.45 : 0.6, unit * 0.32, itemColorIndex(itemType), 0);
+      glyphOf[pop] = glyphIndexValue; growth[pop] = reducedMotion ? 0 : 0.45;
+    }
+  }
+
+  function spawnPlace(x, y) {
+    ensureColors();
+    var unit = cellSize;
+    var stamp = emit(KIND_STAMP, x, y, 0, 0, reducedMotion ? 0.3 : 0.35, unit * 0.5, COLOR.tealHi, 0);
+    thickness[stamp] = Math.max(1, unit * 0.045); growth[stamp] = reducedMotion ? 0 : 0.18;
+    if (reducedMotion) return;
+    for (var index = 0; index < 10; index++) {
+      var angle = (index / 10) * TAU + randomBetween(-0.2, 0.2), reach = unit * 0.42, speed = unit * randomBetween(0.6, 1.1);
+      var dust = emit(KIND_PUFF, x + Math.cos(angle) * reach, y + Math.sin(angle) * reach, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        randomBetween(0.45, 0.7), unit * randomBetween(0.06, 0.1), COLOR.dust, 0);
+      growth[dust] = unit * 0.22; drag[dust] = 4; opacity[dust] = 0.55;
+    }
+  }
+
+  function spawnRemove(x, y) {
+    ensureColors();
+    var unit = cellSize, index;
+    if (reducedMotion) {
+      var calmPuff = emit(KIND_PUFF, x, y, 0, 0, 0.45, unit * 0.3, COLOR.dust, 0);
+      growth[calmPuff] = unit * 0.1; opacity[calmPuff] = 0.45;
+      return;
+    }
+    for (index = 0; index < 9; index++) {
+      var angle = Math.random() * TAU, speed = unit * randomBetween(1.2, 2.8);
+      var chip = emit(KIND_CHIP, x + Math.cos(angle) * unit * 0.12, y + Math.sin(angle) * unit * 0.12, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        randomBetween(0.45, 0.75), unit * randomBetween(0.035, 0.07), index % 3 === 0 ? COLOR.amber : index % 3 === 1 ? COLOR.steel : COLOR.steelDark, 0);
+      drag[chip] = 3.5; spin[chip] = randomBetween(-14, 14); rotation[chip] = Math.random() * TAU;
+    }
+    for (index = 0; index < 6; index++) {
+      var dustAngle = (index / 6) * TAU + randomBetween(-0.3, 0.3), dustSpeed = unit * randomBetween(0.3, 0.7);
+      var dust = emit(KIND_PUFF, x + Math.cos(dustAngle) * unit * 0.15, y + Math.sin(dustAngle) * unit * 0.15, Math.cos(dustAngle) * dustSpeed, Math.sin(dustAngle) * dustSpeed,
+        randomBetween(0.55, 0.85), unit * randomBetween(0.12, 0.18), COLOR.dust, 0.03);
+      growth[dust] = unit * 0.3; drag[dust] = 2.5; opacity[dust] = 0.6;
+    }
+  }
+
+  // ---------------------------------------------------------------- celebration
+  var celebration = { active: false, age: 0, duration: 2.8, width: 0, height: 0, centerX: 0, centerY: 0, glow: null, glowKey: '', sweep: null, sweepKey: '' };
+
+  function celebrate(widthPx, heightPx, terminalX, terminalY) {
+    prepareSprites();
+    var width = +widthPx || 0, height = +heightPx || 0, unit = cellSize, index;
+    var centerX = terminalX === undefined ? width / 2 : +terminalX, centerY = terminalY === undefined ? height / 2 : +terminalY;
+    celebration.active = true; celebration.age = 0; celebration.width = width; celebration.height = height;
+    celebration.centerX = centerX; celebration.centerY = centerY;
+    celebration.duration = reducedMotion ? 2.0 : 2.8;
+    var reach = Math.sqrt(width * width + height * height);
+    if (reducedMotion) {
+      var calmRing = emit(KIND_RING, centerX, centerY, 0, 0, 1.6, unit * 0.5, COLOR.good, 0);
+      growth[calmRing] = unit * 0.6; thickness[calmRing] = Math.max(1.5, unit * 0.06); opacity[calmRing] = 0.6;
+      return;
+    }
+    // terminal: flash + three staggered shockwaves
+    var flash = emit(KIND_FLASH, centerX, centerY, 0, 0, 0.5, unit * 1.8, COLOR.good, 0);
+    opacity[flash] = 0.9;
+    var ringColors = [COLOR.good, COLOR.tealHi, COLOR.amberHi];
+    for (index = 0; index < 3; index++) {
+      var ring = emit(KIND_RING, centerX, centerY, 0, 0, 1.1 + index * 0.15, unit * 0.4, ringColors[index], index * 0.16);
+      growth[ring] = reach * 0.75; thickness[ring] = Math.max(2, unit * (0.16 - index * 0.04));
+    }
+    // radial spark burst
+    for (index = 0; index < 28; index++) {
+      var angle = (index / 28) * TAU + randomBetween(-0.08, 0.08), speed = unit * randomBetween(4, 7.5);
+      var spark = emit(KIND_SPARK, centerX, centerY, Math.cos(angle) * speed, Math.sin(angle) * speed, randomBetween(0.45, 0.8), Math.max(1.5, unit * 0.06),
+        index % 3 === 0 ? COLOR.amberHi : index % 3 === 1 ? COLOR.good : COLOR.tealHi, 0.02);
+      drag[spark] = 3;
+    }
+    // confetti of item glyphs: a fountain from the terminal, then a curtain from the top edge
+    for (index = 0; index < 26; index++) {
+      var launchAngle = -HALF_PI + randomBetween(-0.9, 0.9), launchSpeed = unit * randomBetween(5, 9);
+      var fountain = emit(KIND_CONFETTI, centerX, centerY, Math.cos(launchAngle) * launchSpeed, Math.sin(launchAngle) * launchSpeed,
+        randomBetween(1.6, 2.3), unit * randomBetween(0.3, 0.42), 0, randomBetween(0.05, 0.3));
+      glyphOf[fountain] = index % ITEM_TYPES.length; gravity[fountain] = unit * 9; drag[fountain] = 1.2;
+      spin[fountain] = randomBetween(-6, 6); rotation[fountain] = Math.random() * TAU; wobble[fountain] = unit * randomBetween(0.1, 0.25);
+    }
+    var curtainCount = Math.min(90, Math.max(30, Math.round(width / unit * 4)));
+    for (index = 0; index < curtainCount; index++) {
+      var piece = emit(KIND_CONFETTI, Math.random() * width, -unit * randomBetween(0.3, 1.2), randomBetween(-0.4, 0.4) * unit, unit * randomBetween(1.5, 3),
+        randomBetween(2.0, 2.6), unit * randomBetween(0.26, 0.4), 0, randomBetween(0.25, 1.0));
+      glyphOf[piece] = (index * 7) % ITEM_TYPES.length; gravity[piece] = height * 0.35 + unit * 2; drag[piece] = 0.8;
+      spin[piece] = randomBetween(-5, 5); rotation[piece] = Math.random() * TAU; wobble[piece] = unit * randomBetween(0.15, 0.35);
+    }
+  }
+
+  function drawCelebrationOverlay(ctx) {
+    var progress = celebration.age / celebration.duration;
+    var envelope = progress < 0.12 ? progress / 0.12 : 1 - (progress - 0.12) / 0.88;
+    envelope = clamp01(envelope);
+    var width = celebration.width, height = celebration.height;
+    var goodRgb = colorRgb[COLOR.good];
+    var glowRadius = Math.max(width, height) * 0.75;
+    var glowKey = celebration.centerX + '|' + celebration.centerY + '|' + glowRadius;
+    if (celebration.glowKey !== glowKey && ctx.createRadialGradient) { // created once per celebration, not per frame
+      var glow = ctx.createRadialGradient(celebration.centerX, celebration.centerY, 0, celebration.centerX, celebration.centerY, glowRadius);
+      glow.addColorStop(0, rgbaString(goodRgb, 0.35));
+      glow.addColorStop(0.4, rgbaString(goodRgb, 0.1));
+      glow.addColorStop(1, rgbaString(goodRgb, 0));
+      celebration.glow = glow; celebration.glowKey = glowKey;
+    }
+    if (celebration.glow) {
+      ctx.globalAlpha = envelope * (reducedMotion ? 0.7 : 1);
+      ctx.fillStyle = celebration.glow;
+      ctx.fillRect(0, 0, width, height);
+    }
+    // board edge frame pulse
+    ctx.globalAlpha = envelope * 0.55 * (reducedMotion ? 0.6 : 0.75 + 0.25 * Math.sin(celebration.age * 10));
+    ctx.strokeStyle = colorStrings[COLOR.good];
+    var frameWidth = Math.max(2, cellSize * 0.1);
+    ctx.lineWidth = frameWidth;
+    ctx.strokeRect(frameWidth / 2, frameWidth / 2, width - frameWidth, height - frameWidth);
+    if (reducedMotion) { ctx.globalAlpha = 1; return; }
+    // a diagonal light sweep crossing the board once
+    var sweepProgress = (celebration.age - 0.25) / 0.9;
+    if (sweepProgress > 0 && sweepProgress < 1) {
+      var bandHalf = Math.max(width, height) * 0.12, diagonal = width + height;
+      var sweepKey = '' + bandHalf;
+      if (celebration.sweepKey !== sweepKey && ctx.createLinearGradient) {
+        var sweep = ctx.createLinearGradient(-bandHalf, 0, bandHalf, 0);
+        sweep.addColorStop(0, 'rgba(255,255,255,0)');
+        sweep.addColorStop(0.5, 'rgba(255,250,235,0.16)');
+        sweep.addColorStop(1, 'rgba(255,255,255,0)');
+        celebration.sweep = sweep; celebration.sweepKey = sweepKey;
+      }
+      if (celebration.sweep) {
+        var bandX = -width * 0.3 + sweepProgress * width * 1.6;
+        ctx.save();
+        ctx.translate(bandX, height / 2); ctx.rotate(0.35);
+        ctx.globalAlpha = 1; ctx.fillStyle = celebration.sweep;
+        ctx.fillRect(-bandHalf, -diagonal, bandHalf * 2, diagonal * 2);
+        ctx.restore();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------------------------------------------------------------- update / draw
+  function update(deltaSeconds) {
+    var step = +deltaSeconds || 0;
+    if (step > 0.1) step = 0.1;
+    if (step < 0) step = 0;
+    var count = 0;
+    for (var slot = 0; slot < POOL_SIZE; slot++) {
+      if (kind[slot] === KIND_NONE) continue;
+      age[slot] += step;
+      if (age[slot] >= lifetime[slot]) { kind[slot] = KIND_NONE; continue; }
+      count++;
+      if (age[slot] < 0) continue; // still waiting for its delay
+      var damping = drag[slot] ? Math.exp(-drag[slot] * step) : 1;
+      velocityX[slot] *= damping;
+      velocityY[slot] = velocityY[slot] * damping + gravity[slot] * step;
+      positionX[slot] += velocityX[slot] * step;
+      positionY[slot] += velocityY[slot] * step;
+      rotation[slot] += spin[slot] * step;
+    }
+    liveCount = count;
+    if (celebration.active) {
+      celebration.age += step;
+      if (celebration.age >= celebration.duration) celebration.active = false;
+    }
+  }
+
+  function drawParticle(ctx, slot, additive) {
+    var kindValue = kind[slot];
+    var isAdditive = kindValue === KIND_SPARK || kindValue === KIND_RING || kindValue === KIND_FLASH || kindValue === KIND_GLINT || kindValue === KIND_STAMP;
+    if (isAdditive !== additive) return;
+    var progress = age[slot] / lifetime[slot], x = positionX[slot], y = positionY[slot], colorIndex = colorOf[slot];
+    var fade = 1 - progress, radius, sprite;
+    switch (kindValue) {
+      case KIND_SPARK: {
+        var tail = 0.045;
+        ctx.globalAlpha = fade * opacity[slot];
+        ctx.strokeStyle = colorStrings[colorIndex];
+        ctx.lineWidth = size[slot] * (1 - progress * 0.5);
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - velocityX[slot] * tail, y - velocityY[slot] * tail); ctx.stroke();
+        break;
+      }
+      case KIND_RING: {
+        radius = size[slot] + growth[slot] * lifetime[slot] * (1 - fade * fade);
+        ctx.globalAlpha = fade * opacity[slot];
+        ctx.strokeStyle = colorStrings[colorIndex];
+        ctx.lineWidth = Math.max(0.5, thickness[slot] * (0.4 + 0.6 * fade));
+        circle(ctx, x, y, radius); ctx.stroke();
+        break;
+      }
+      case KIND_FLASH: case KIND_PUFF: {
+        radius = size[slot] + growth[slot] * age[slot];
+        if (kindValue === KIND_FLASH) { radius = size[slot] * (0.6 + 0.4 * progress); ctx.globalAlpha = fade * fade * opacity[slot]; }
+        else ctx.globalAlpha = Math.pow(fade, 1.5) * opacity[slot] * (progress < 0.15 ? progress / 0.15 : 1);
+        sprite = softSprite(colorIndex);
+        if (sprite) ctx.drawImage(sprite, x - radius * 1.6, y - radius * 1.6, radius * 3.2, radius * 3.2);
+        else { ctx.fillStyle = colorStrings[colorIndex]; circle(ctx, x, y, radius); ctx.fill(); }
+        break;
+      }
+      case KIND_STAMP: {
+        var half = size[slot] * (1 + growth[slot] * progress);
+        ctx.globalAlpha = fade * fade * opacity[slot];
+        ctx.strokeStyle = colorStrings[colorIndex];
+        ctx.lineWidth = thickness[slot];
+        ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+        break;
+      }
+      case KIND_GLINT: {
+        var length = size[slot] * Math.sin(progress * Math.PI), width = thickness[slot];
+        ctx.globalAlpha = opacity[slot];
+        ctx.fillStyle = colorStrings[colorIndex];
+        ctx.fillRect(x - length, y - width / 2, length * 2, width);
+        ctx.fillRect(x - width / 2, y - length, width, length * 2);
+        break;
+      }
+      case KIND_CHIP: {
+        var chipHalf = size[slot], cosine = Math.cos(rotation[slot]) * chipHalf, sine = Math.sin(rotation[slot]) * chipHalf;
+        ctx.globalAlpha = 1 - progress * progress;
+        ctx.fillStyle = colorStrings[colorIndex];
+        ctx.beginPath();
+        ctx.moveTo(x + cosine - sine, y + sine + cosine); ctx.lineTo(x - cosine - sine, y - sine + cosine);
+        ctx.lineTo(x - cosine + sine, y - sine - cosine); ctx.lineTo(x + cosine + sine, y + sine - cosine);
+        ctx.closePath(); ctx.fill();
+        break;
+      }
+      case KIND_CONFETTI: {
+        var sway = Math.sin(age[slot] * 5 + rotation[slot] * 0.3) * wobble[slot];
+        var flip = Math.cos(age[slot] * 6 + slot);
+        ctx.globalAlpha = progress > 0.75 ? (1 - progress) / 0.25 : 1;
+        sprite = glyphSprite(glyphOf[slot]);
+        ctx.save();
+        ctx.translate(x + sway, y); ctx.rotate(rotation[slot]); ctx.scale(Math.max(0.2, Math.abs(flip)), 1);
+        if (sprite) ctx.drawImage(sprite, -size[slot] / 2, -size[slot] / 2, size[slot], size[slot]);
+        else { ctx.fillStyle = colorStrings[COLOR.firstItem + glyphOf[slot]]; ctx.fillRect(-size[slot] / 2, -size[slot] / 4, size[slot], size[slot] / 2); }
+        ctx.restore();
+        break;
+      }
+      case KIND_POP: {
+        var popSize = size[slot] * (1 + growth[slot] * progress);
+        ctx.globalAlpha = progress < 0.15 ? progress / 0.15 : fade / 0.85;
+        sprite = glyphSprite(glyphOf[slot]);
+        if (sprite) ctx.drawImage(sprite, x - popSize / 2, y - popSize / 2, popSize, popSize);
+        else { ctx.fillStyle = colorStrings[colorIndex]; circle(ctx, x, y, popSize * 0.35); ctx.fill(); }
+        break;
+      }
+    }
+  }
+
+  function draw(ctx) {
+    if (!liveCount && !celebration.active) return;
+    ensureColors();
+    var previousComposite = ctx.globalCompositeOperation, previousAlpha = ctx.globalAlpha;
+    var previousCap = ctx.lineCap;
+    ctx.lineCap = 'round';
+    var slot;
+    for (slot = 0; slot < POOL_SIZE; slot++) if (kind[slot] !== KIND_NONE && age[slot] >= 0) drawParticle(ctx, slot, false);
+    ctx.globalCompositeOperation = 'lighter';
+    if (celebration.active) drawCelebrationOverlay(ctx);
+    for (slot = 0; slot < POOL_SIZE; slot++) if (kind[slot] !== KIND_NONE && age[slot] >= 0) drawParticle(ctx, slot, true);
+    ctx.globalCompositeOperation = previousComposite;
+    ctx.globalAlpha = previousAlpha;
+    ctx.lineCap = previousCap;
+  }
+
+  function clearAll() {
+    for (var slot = 0; slot < POOL_SIZE; slot++) kind[slot] = KIND_NONE;
+    liveCount = 0; celebration.active = false;
+  }
+
+  // ---------------------------------------------------------------- chapter banners
+  var bannerCache = {}, bannerCount = 0;
+
+  function skyGradient(ctx, top, bottom, stops) {
+    var gradient = ctx.createLinearGradient(0, top, 0, bottom);
+    for (var index = 0; index < stops.length; index += 2) gradient.addColorStop(stops[index], stops[index + 1]);
+    return gradient;
+  }
+  // a mountain / wall ridge from left to right, filled down to `floor`
+  function ridge(ctx, width, baseY, amplitude, color, seed, floor, roughness) {
+    var random = makeRandom(seed), phaseA = random() * TAU, phaseB = random() * TAU, phaseC = random() * TAU;
+    var stepWidth = Math.max(4, amplitude * 0.35), x;
+    ctx.beginPath(); ctx.moveTo(0, floor);
+    for (x = 0; x <= width + stepWidth; x += stepWidth) {
+      var shape = 0.55 + 0.25 * Math.sin(x / (amplitude * 4.1) + phaseA) + 0.14 * Math.sin(x / (amplitude * 1.7) + phaseB) + 0.06 * Math.sin(x / (amplitude * 0.6) + phaseC);
+      ctx.lineTo(x, baseY - amplitude * shape - (random() - 0.5) * amplitude * (roughness || 0.12));
+    }
+    ctx.lineTo(width, floor); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+  }
+  function crystal(ctx, x, y, height, light, dark, glowRgb) {
+    ctx.fillStyle = rgbaString(glowRgb, 0.14); circle(ctx, x, y - height * 0.35, height * 0.6); ctx.fill();
+    var widthHalf = height * 0.22;
+    polygon(ctx, [x - widthHalf, y, x - widthHalf * 0.6, y - height * 0.7, x, y - height, x, y]); ctx.fillStyle = light; ctx.fill();
+    polygon(ctx, [x, y, x, y - height, x + widthHalf * 0.6, y - height * 0.7, x + widthHalf, y]); ctx.fillStyle = dark; ctx.fill();
+    polygon(ctx, [x + widthHalf * 0.4, y, x + widthHalf * 1.1, y - height * 0.5, x + widthHalf * 1.7, y]); ctx.fillStyle = light; ctx.fill();
+  }
+
+  // --- act 1: landfall at dusk
+  function paintLandfallStatic(ctx, width, height) {
+    var horizon = height * 0.7, random = makeRandom(11), index;
+    ctx.fillStyle = skyGradient(ctx, 0, horizon, [0, '#0c091a', 0.42, '#2a1640', 0.78, '#7a2f50', 1, '#e27a4a']);
+    ctx.fillRect(0, 0, width, horizon + 2);
+    var starCount = Math.floor(width * height / 650);
+    for (index = 0; index < starCount; index++) {
+      var starY = random() * horizon * 0.62, starAlpha = (0.15 + random() * 0.6) * (1 - starY / (horizon * 0.62));
+      ctx.fillStyle = 'rgba(255,240,255,' + starAlpha.toFixed(3) + ')';
+      ctx.fillRect(random() * width, starY, random() < 0.1 ? 2 : 1, random() < 0.1 ? 2 : 1);
+    }
+    // banded alien sun sinking into the horizon
+    var sunX = width * 0.72, sunY = horizon - height * 0.04, sunRadius = height * 0.34;
+    var halo = ctx.createRadialGradient(sunX, sunY, sunRadius * 0.7, sunX, sunY, sunRadius * 2.6);
+    halo.addColorStop(0, 'rgba(255,170,90,0.4)'); halo.addColorStop(1, 'rgba(255,170,90,0)');
+    ctx.fillStyle = halo; ctx.fillRect(0, 0, width, horizon);
+    var disc = ctx.createRadialGradient(sunX - sunRadius * 0.3, sunY - sunRadius * 0.35, 0, sunX, sunY, sunRadius);
+    disc.addColorStop(0, '#fff0c8'); disc.addColorStop(0.55, '#ffb35a'); disc.addColorStop(1, '#ef6a3c');
+    ctx.fillStyle = disc; circle(ctx, sunX, sunY, sunRadius); ctx.fill();
+    ctx.save(); circle(ctx, sunX, sunY, sunRadius); ctx.clip();
+    ctx.fillStyle = 'rgba(120,36,72,0.3)';
+    for (index = 0; index < 4; index++) ctx.fillRect(sunX - sunRadius, sunY - sunRadius * 0.15 + index * sunRadius * 0.24, sunRadius * 2, sunRadius * (0.05 + index * 0.025));
+    ctx.restore();
+    // pale moon with a crescent shadow
+    var moonX = width * 0.15, moonY = height * 0.2, moonRadius = height * 0.065;
+    ctx.fillStyle = '#c9f3ec'; circle(ctx, moonX, moonY, moonRadius); ctx.fill();
+    ctx.fillStyle = '#1b1232'; circle(ctx, moonX + moonRadius * 0.45, moonY - moonRadius * 0.2, moonRadius * 0.92); ctx.fill();
+    // horizon haze
+    ctx.fillStyle = skyGradient(ctx, horizon - height * 0.2, horizon, [0, 'rgba(240,140,90,0)', 1, 'rgba(240,140,90,0.3)']);
+    ctx.fillRect(0, horizon - height * 0.2, width, height * 0.2);
+    // three mountain layers + plain
+    ridge(ctx, width, horizon + height * 0.02, height * 0.24, '#5b2d55', 3, height, 0.1);
+    ridge(ctx, width, horizon + height * 0.08, height * 0.16, '#36203f', 5, height, 0.15);
+    ridge(ctx, width, horizon + height * 0.2, height * 0.07, '#1c1428', 9, height, 0.3);
+    // rim light along the near plain
+    ctx.fillStyle = skyGradient(ctx, horizon + height * 0.12, height, [0, 'rgba(255,150,100,0.12)', 1, 'rgba(255,150,100,0)']);
+    ctx.fillRect(0, horizon + height * 0.12, width, height);
+    // ore crystals scattered on the plain
+    var ferriteGlow = [255, 110, 50], cupriteGlow = [50, 230, 180];
+    for (index = 0; index < Math.max(3, Math.floor(width / (height * 0.9))); index++) {
+      var crystalX = width * (0.05 + random() * 0.9), crystalY = height * (0.9 + random() * 0.08);
+      if (Math.abs(crystalX - width * 0.4) < height * 0.5) continue; // keep the landing pad clear
+      var isFerrite = random() < 0.55;
+      crystal(ctx, crystalX, crystalY, height * (0.08 + random() * 0.06), isFerrite ? '#ffb27a' : '#9dffe0', isFerrite ? '#c4502a' : '#1f9c7b', isFerrite ? ferriteGlow : cupriteGlow);
+    }
+    // landing pad
+    var padX = width * 0.4, padY = height * 0.9, padRadiusX = height * 0.42, padRadiusY = height * 0.07;
+    ctx.fillStyle = '#100c18'; ctx.beginPath(); ctx.ellipse(padX, padY + padRadiusY * 0.3, padRadiusX * 1.05, padRadiusY * 1.1, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2c2a3b'; ctx.beginPath(); ctx.ellipse(padX, padY, padRadiusX, padRadiusY, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(244,169,60,0.55)'; ctx.lineWidth = Math.max(1, height * 0.012);
+    ctx.beginPath(); ctx.ellipse(padX, padY, padRadiusX * 0.7, padRadiusY * 0.7, 0, 0, TAU); ctx.stroke();
+  }
+  function paintLandfallAnimated(ctx, width, height, time) {
+    var horizon = height * 0.7, index;
+    // a few twinkling stars
+    ctx.fillStyle = '#ffffff';
+    for (index = 0; index < 8; index++) {
+      var twinkle = Math.max(0, Math.sin(time * 1.7 + index * 2.3));
+      if (twinkle < 0.05) continue;
+      var starX = noise(index * 3 + 1) * width, starY = noise(index * 3 + 2) * horizon * 0.45, arm = 1 + twinkle * height * 0.012;
+      ctx.globalAlpha = twinkle * 0.8;
+      ctx.fillRect(starX - arm, starY - 0.5, arm * 2, 1); ctx.fillRect(starX - 0.5, starY - arm, 1, arm * 2);
+    }
+    ctx.globalAlpha = 1;
+    var padX = width * 0.4, padY = height * 0.9, padRadiusX = height * 0.42, padRadiusY = height * 0.07;
+    // dust kicked up on the pad
+    for (index = 0; index < 4; index++) {
+      var dustPhase = (time * 0.35 + index / 4) % 1, side = index % 2 ? 1 : -1;
+      ctx.globalAlpha = 0.22 * (1 - dustPhase);
+      ctx.fillStyle = '#9a7488';
+      ctx.beginPath();
+      ctx.ellipse(padX + side * padRadiusX * (0.3 + dustPhase * 0.8), padY - padRadiusY * dustPhase, padRadiusX * (0.15 + dustPhase * 0.35), padRadiusY * (0.6 + dustPhase), 0, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // pad lights chase
+    for (index = 0; index < 8; index++) {
+      var lightAngle = (index / 8) * TAU, lit = ((Math.floor(time * 6) - index) % 8 + 8) % 8 === 0;
+      ctx.fillStyle = lit ? '#ffd08a' : 'rgba(244,169,60,0.35)';
+      var lightSize = Math.max(1.5, height * (lit ? 0.022 : 0.014));
+      ctx.fillRect(padX + Math.cos(lightAngle) * padRadiusX * 0.85 - lightSize / 2, padY + Math.sin(lightAngle) * padRadiusY * 0.85 - lightSize / 2, lightSize, lightSize);
+    }
+    // dropship hovering over the pad
+    var unit = height * 0.11, shipX = padX, shipY = height * 0.36 + Math.sin(time * 1.3) * height * 0.025;
+    ctx.fillStyle = 'rgba(63,208,196,' + (0.08 + 0.04 * Math.sin(time * 3)).toFixed(3) + ')';
+    polygon(ctx, [shipX - unit * 0.7, shipY + unit * 0.7, shipX + unit * 0.7, shipY + unit * 0.7, shipX + padRadiusX * 0.75, padY, shipX - padRadiusX * 0.75, padY]);
+    ctx.fill();
+    var previousComposite = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    for (index = -1; index <= 1; index += 2) {
+      var plumeLength = unit * (1.5 + 0.3 * Math.sin(time * 17 + index) + 0.2 * Math.sin(time * 29));
+      var nozzleX = shipX + index * unit * 1.25, nozzleY = shipY + unit * 0.85;
+      ctx.fillStyle = 'rgba(244,140,60,0.55)';
+      polygon(ctx, [nozzleX - unit * 0.22, nozzleY, nozzleX + unit * 0.22, nozzleY, nozzleX, nozzleY + plumeLength]); ctx.fill();
+      ctx.fillStyle = 'rgba(255,230,180,0.85)';
+      polygon(ctx, [nozzleX - unit * 0.1, nozzleY, nozzleX + unit * 0.1, nozzleY, nozzleX, nozzleY + plumeLength * 0.55]); ctx.fill();
+    }
+    ctx.globalCompositeOperation = previousComposite;
+    // legs
+    ctx.strokeStyle = '#4b4762'; ctx.lineWidth = Math.max(1, unit * 0.1); ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(shipX - unit * 0.9, shipY + unit * 0.55); ctx.lineTo(shipX - unit * 1.65, shipY + unit * 1.15); ctx.lineTo(shipX - unit * 1.9, shipY + unit * 1.15);
+    ctx.moveTo(shipX + unit * 0.9, shipY + unit * 0.55); ctx.lineTo(shipX + unit * 1.65, shipY + unit * 1.15); ctx.lineTo(shipX + unit * 1.9, shipY + unit * 1.15);
+    ctx.stroke(); ctx.lineCap = 'butt';
+    // engine pods
+    ctx.fillStyle = '#1b1826';
+    ctx.fillRect(shipX - unit * 1.5, shipY + unit * 0.25, unit * 0.5, unit * 0.62);
+    ctx.fillRect(shipX + unit * 1.0, shipY + unit * 0.25, unit * 0.5, unit * 0.62);
+    ctx.fillStyle = '#f4a93c';
+    ctx.fillRect(shipX - unit * 1.5, shipY + unit * 0.8, unit * 0.5, unit * 0.07);
+    ctx.fillRect(shipX + unit * 1.0, shipY + unit * 0.8, unit * 0.5, unit * 0.07);
+    // hull
+    polygon(ctx, [shipX - unit * 1.7, shipY + unit * 0.3, shipX - unit * 1.15, shipY - unit * 0.5, shipX + unit * 1.15, shipY - unit * 0.5,
+      shipX + unit * 1.7, shipY + unit * 0.3, shipX + unit * 1.1, shipY + unit * 0.68, shipX - unit * 1.1, shipY + unit * 0.68]);
+    ctx.fillStyle = '#2a2638'; ctx.fill();
+    polygon(ctx, [shipX - unit * 1.7, shipY + unit * 0.3, shipX - unit * 1.15, shipY - unit * 0.5, shipX + unit * 1.15, shipY - unit * 0.5, shipX + unit * 1.7, shipY + unit * 0.3]);
+    ctx.fillStyle = '#3d3954'; ctx.fill();
+    // warm rim light from the sun on the right
+    ctx.strokeStyle = 'rgba(255,170,110,0.75)'; ctx.lineWidth = Math.max(1, unit * 0.06);
+    ctx.beginPath(); ctx.moveTo(shipX + unit * 1.15, shipY - unit * 0.5); ctx.lineTo(shipX + unit * 1.7, shipY + unit * 0.3); ctx.lineTo(shipX + unit * 1.1, shipY + unit * 0.68); ctx.stroke();
+    // cabin + window strip + hazard stripe
+    polygon(ctx, [shipX - unit * 0.55, shipY - unit * 0.5, shipX - unit * 0.3, shipY - unit * 0.88, shipX + unit * 0.45, shipY - unit * 0.88, shipX + unit * 0.72, shipY - unit * 0.5]);
+    ctx.fillStyle = '#4a4664'; ctx.fill();
+    ctx.fillStyle = '#a8f4ec'; ctx.fillRect(shipX - unit * 0.22, shipY - unit * 0.78, unit * 0.62, unit * 0.14);
+    ctx.fillStyle = '#f4a93c'; ctx.fillRect(shipX - unit * 1.0, shipY + unit * 0.1, unit * 2.0, unit * 0.08);
+    // nav lights
+    var blink = Math.sin(time * 4) > 0.2 ? 1 : 0.25;
+    ctx.globalAlpha = blink;
+    ctx.fillStyle = '#ff5b4e'; circle(ctx, shipX - unit * 1.7, shipY + unit * 0.3, Math.max(1.2, unit * 0.08)); ctx.fill();
+    ctx.globalAlpha = 1.25 - blink;
+    ctx.fillStyle = '#62e39b'; circle(ctx, shipX + unit * 1.7, shipY + unit * 0.3, Math.max(1.2, unit * 0.08)); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- act 2: deep survey canyon with drill rigs
+  var CANYON_LAYERS = [ // inner edge (fraction of width from the side), top (fraction of height), colour
+    { edge: 0.43, top: 0.34, color: '#6a3a5e', seed: 21 },
+    { edge: 0.35, top: 0.2, color: '#4b2a4d', seed: 22 },
+    { edge: 0.25, top: 0.06, color: '#33203d', seed: 23 },
+    { edge: 0.12, top: -0.1, color: '#1d1527', seed: 24 }
+  ];
+  var RIGS = [ // x (fraction of width), base (fraction of height), height (fraction of height), haze
+    { x: 0.53, base: 0.6, tall: 0.22, haze: 0.55 },
+    { x: 0.2, base: 0.74, tall: 0.62, haze: 0 },
+    { x: 0.8, base: 0.68, tall: 0.5, haze: 0 }
+  ];
+  function canyonWall(ctx, width, height, layer, mirrored) {
+    var random = makeRandom(layer.seed * (mirrored ? 7 : 3)), stepHeight = height * 0.06, y;
+    var top = height * layer.top, edge = width * layer.edge;
+    var points = [];
+    points.push(0, height, 0, top);
+    for (y = top; y <= height + stepHeight; y += stepHeight) {
+      var depth = (y - top) / height;
+      points.push(edge + depth * width * 0.06 + (random() - 0.5) * height * 0.08, y);
+    }
+    points.push(0, height + stepHeight);
+    if (mirrored) for (var index = 0; index < points.length; index += 2) points[index] = width - points[index];
+    polygon(ctx, points);
+    ctx.fillStyle = layer.color; ctx.fill();
+    // strata lines inside the wall
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(255,200,220,0.07)'; ctx.lineWidth = Math.max(1, height * 0.008);
+    ctx.beginPath();
+    for (y = top + height * 0.04; y < height; y += height * 0.055) {
+      ctx.moveTo(0, y + (mirrored ? 1 : -1) * height * 0.02); ctx.lineTo(width, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return random;
+  }
+  function vein(ctx, startX, startY, length, angle, random, color, glow) {
+    ctx.beginPath(); ctx.moveTo(startX, startY);
+    var x = startX, y = startY;
+    for (var step = 0; step < 6; step++) {
+      x += Math.cos(angle) * length / 6 + (random() - 0.5) * length * 0.15;
+      y += Math.sin(angle) * length / 6 + (random() - 0.5) * length * 0.15;
+      ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = glow; ctx.lineWidth = Math.max(2, length * 0.08); ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, length * 0.025); ctx.stroke();
+  }
+  function rigTower(ctx, x, base, tall, haze) {
+    var bottomHalf = tall * 0.17, topHalf = tall * 0.045, segments = 5, index;
+    var steel = haze ? 'rgba(40,24,50,0.9)' : '#141019';
+    ctx.strokeStyle = steel; ctx.lineWidth = Math.max(1, tall * 0.028); ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - bottomHalf, base); ctx.lineTo(x - topHalf, base - tall);
+    ctx.moveTo(x + bottomHalf, base); ctx.lineTo(x + topHalf, base - tall);
+    for (index = 0; index < segments; index++) { // X bracing
+      var lowerY = base - (tall * index) / segments, upperY = base - (tall * (index + 1)) / segments;
+      var lowerHalf = bottomHalf + (topHalf - bottomHalf) * index / segments, upperHalf = bottomHalf + (topHalf - bottomHalf) * (index + 1) / segments;
+      ctx.moveTo(x - lowerHalf, lowerY); ctx.lineTo(x + upperHalf, upperY);
+      ctx.moveTo(x + lowerHalf, lowerY); ctx.lineTo(x - upperHalf, upperY);
+      ctx.moveTo(x - upperHalf, upperY); ctx.lineTo(x + upperHalf, upperY);
+    }
+    // crane arm and cable
+    ctx.moveTo(x - topHalf, base - tall); ctx.lineTo(x + tall * 0.32, base - tall * 0.93);
+    ctx.moveTo(x + tall * 0.3, base - tall * 0.93); ctx.lineTo(x + tall * 0.3, base - tall * 0.55);
+    ctx.stroke();
+    if (!haze) { // dusk rim light on the right leg
+      ctx.strokeStyle = 'rgba(255,170,110,0.55)'; ctx.lineWidth = Math.max(1, tall * 0.012);
+      ctx.beginPath(); ctx.moveTo(x + bottomHalf, base); ctx.lineTo(x + topHalf, base - tall); ctx.stroke();
+    }
+    // platform
+    ctx.fillStyle = steel;
+    ctx.fillRect(x - bottomHalf * 1.6, base - tall * 0.03, bottomHalf * 3.2, tall * 0.06);
+    ctx.fillStyle = haze ? 'rgba(244,169,60,0.35)' : '#f4a93c';
+    ctx.fillRect(x - bottomHalf * 1.6, base - tall * 0.035, bottomHalf * 3.2, Math.max(1, tall * 0.012));
+  }
+  function paintSurveyStatic(ctx, width, height) {
+    ctx.fillStyle = skyGradient(ctx, 0, height * 0.6, [0, '#110b20', 0.6, '#3e2246', 1, '#7a3d55']);
+    ctx.fillRect(0, 0, width, height);
+    var haze = ctx.createRadialGradient(width * 0.5, height * 0.42, 0, width * 0.5, height * 0.42, height * 1.1);
+    haze.addColorStop(0, 'rgba(240,140,90,0.35)'); haze.addColorStop(1, 'rgba(240,140,90,0)');
+    ctx.fillStyle = haze; ctx.fillRect(0, 0, width, height);
+    var random = makeRandom(31), index;
+    for (index = 0; index < Math.floor(width * height / 1600); index++) {
+      ctx.fillStyle = 'rgba(255,235,255,' + (0.15 + random() * 0.4).toFixed(2) + ')';
+      ctx.fillRect(width * (0.3 + random() * 0.4), random() * height * 0.3, 1, 1);
+    }
+    // canyon floor with a teal mist river
+    ctx.fillStyle = '#170f20'; ctx.fillRect(0, height * 0.62, width, height);
+    var river = ctx.createLinearGradient(0, height * 0.7, 0, height);
+    river.addColorStop(0, 'rgba(63,208,196,0)'); river.addColorStop(0.6, 'rgba(63,208,196,0.28)'); river.addColorStop(1, 'rgba(63,208,196,0.08)');
+    ctx.fillStyle = river;
+    polygon(ctx, [width * 0.46, height * 0.64, width * 0.54, height * 0.64, width * 0.7, height, width * 0.3, height]); ctx.fill();
+    // walls far to near, both sides, with glowing ore veins on the nearer ones
+    for (index = 0; index < CANYON_LAYERS.length; index++) {
+      var layer = CANYON_LAYERS[index];
+      var leftRandom = canyonWall(ctx, width, height, layer, false);
+      var rightRandom = canyonWall(ctx, width, height, layer, true);
+      if (index >= 2) {
+        var veinLength = height * 0.35;
+        vein(ctx, width * layer.edge * 0.5, height * (0.35 + index * 0.08), veinLength, -0.5, leftRandom, '#9dffe0', 'rgba(63,208,196,0.22)');
+        vein(ctx, width * (1 - layer.edge * 0.6), height * (0.5 + index * 0.05), veinLength * 0.8, Math.PI + 0.4, rightRandom, '#ffb27a', 'rgba(255,110,50,0.22)');
+      }
+      if (index === 1) rigTower(ctx, width * RIGS[0].x, height * RIGS[0].base, height * RIGS[0].tall, RIGS[0].haze);
+    }
+    rigTower(ctx, width * RIGS[1].x, height * RIGS[1].base, height * RIGS[1].tall, 0);
+    rigTower(ctx, width * RIGS[2].x, height * RIGS[2].base, height * RIGS[2].tall, 0);
+  }
+  function paintSurveyAnimated(ctx, width, height, time) {
+    var index, previousComposite = ctx.globalCompositeOperation;
+    // drifting mist
+    ctx.fillStyle = 'rgba(63,208,196,0.07)';
+    for (index = 0; index < 3; index++) {
+      var travel = ((time * (0.02 + index * 0.01) + index * 0.37) % 1) * width * 1.4 - width * 0.2;
+      ctx.beginPath(); ctx.ellipse(travel, height * (0.78 + index * 0.06), width * 0.18, height * 0.06, 0, 0, TAU); ctx.fill();
+    }
+    for (index = 0; index < RIGS.length; index++) {
+      var rig = RIGS[index], rigX = width * rig.x, base = height * rig.base, tall = height * rig.tall;
+      var stroke = 0.5 + 0.5 * Math.sin(time * 2.2 + index * 1.9), headY = base - tall * (0.18 + 0.32 * stroke);
+      var dim = rig.haze ? 0.5 : 1;
+      // drill head sliding in the tower
+      ctx.fillStyle = rig.haze ? 'rgba(90,70,110,0.9)' : '#8c96aa';
+      ctx.fillRect(rigX - tall * 0.05, headY - tall * 0.05, tall * 0.1, tall * 0.1);
+      ctx.fillStyle = '#272a35'; ctx.fillRect(rigX - tall * 0.012, headY + tall * 0.05, tall * 0.024, base - headY - tall * 0.05);
+      // impact glow + sparks at the bore when the head is low
+      var impact = Math.pow(1 - stroke, 3);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(255,140,60,' + (0.35 * impact * dim + 0.08).toFixed(3) + ')';
+      circle(ctx, rigX, base, tall * 0.16); ctx.fill();
+      ctx.fillStyle = '#ffd08a';
+      for (var sparkIndex = 0; sparkIndex < 5; sparkIndex++) {
+        var sparkPhase = (time * 1.8 + noise(index * 10 + sparkIndex)) % 1, sparkAngle = -Math.PI * (0.15 + 0.7 * noise(index * 10 + sparkIndex + 5));
+        var sparkDistance = sparkPhase * tall * 0.22;
+        ctx.globalAlpha = (1 - sparkPhase) * dim;
+        ctx.fillRect(rigX + Math.cos(sparkAngle) * sparkDistance, base + Math.sin(sparkAngle) * sparkDistance + sparkPhase * sparkPhase * tall * 0.15, Math.max(1, tall * 0.015), Math.max(1, tall * 0.015));
+      }
+      ctx.globalAlpha = 1;
+      // warning beacon on top
+      var beacon = Math.sin(time * 3 + index * 2) > 0.2 ? 1 : 0.2;
+      ctx.fillStyle = 'rgba(255,91,78,' + (beacon * dim).toFixed(2) + ')';
+      circle(ctx, rigX, base - tall - tall * 0.03, Math.max(1.5, tall * 0.03)); ctx.fill();
+      ctx.fillStyle = 'rgba(255,91,78,' + (beacon * 0.25 * dim).toFixed(2) + ')';
+      circle(ctx, rigX, base - tall - tall * 0.03, Math.max(3, tall * 0.08)); ctx.fill();
+      ctx.globalCompositeOperation = previousComposite;
+    }
+  }
+
+  // --- challenge: blueprint
+  function blueprintRoute(width, height) { // grid-snapped amber route, as [x, y, x, y, ...]
+    var grid = height / 12;
+    function snap(value) { return Math.round(value / grid) * grid; }
+    return [snap(width * 0.6), snap(height * 0.75), snap(width * 0.68), snap(height * 0.75), snap(width * 0.68), snap(height * 0.25),
+      snap(width * 0.8), snap(height * 0.25), snap(width * 0.8), snap(height * 0.5), snap(width * 0.9), snap(height * 0.5)];
+  }
+  function dimensionLine(ctx, x1, y1, x2, y2, arrow) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x1 + Math.cos(angle + 0.4) * arrow, y1 + Math.sin(angle + 0.4) * arrow);
+    ctx.moveTo(x1, y1); ctx.lineTo(x1 + Math.cos(angle - 0.4) * arrow, y1 + Math.sin(angle - 0.4) * arrow);
+    ctx.moveTo(x2, y2); ctx.lineTo(x2 - Math.cos(angle + 0.4) * arrow, y2 - Math.sin(angle + 0.4) * arrow);
+    ctx.moveTo(x2, y2); ctx.lineTo(x2 - Math.cos(angle - 0.4) * arrow, y2 - Math.sin(angle - 0.4) * arrow);
+    ctx.stroke();
+  }
+  function paintBlueprintStatic(ctx, width, height, cacheEntry) {
+    ctx.fillStyle = skyGradient(ctx, 0, height, [0, '#0a141f', 1, '#0f1e2c']);
+    ctx.fillRect(0, 0, width, height);
+    var grid = height / 12, line = Math.max(1, height / 160), index, x, y;
+    for (index = 0, x = 0; x <= width; x += grid, index++) {
+      ctx.fillStyle = index % 4 === 0 ? 'rgba(63,208,196,0.17)' : 'rgba(63,208,196,0.07)';
+      ctx.fillRect(Math.round(x), 0, line, height);
+    }
+    for (index = 0, y = 0; y <= height; y += grid, index++) {
+      ctx.fillStyle = index % 4 === 0 ? 'rgba(63,208,196,0.17)' : 'rgba(63,208,196,0.07)';
+      ctx.fillRect(0, Math.round(y), width, line);
+    }
+    var teal = 'rgba(120,235,225,0.85)', faint = 'rgba(120,235,225,0.4)';
+    ctx.lineWidth = Math.max(1, height * 0.012); ctx.strokeStyle = teal;
+    // corner registration marks
+    var inset = height * 0.08, arm = height * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(inset, inset + arm); ctx.lineTo(inset, inset); ctx.lineTo(inset + arm, inset);
+    ctx.moveTo(width - inset - arm, inset); ctx.lineTo(width - inset, inset); ctx.lineTo(width - inset, inset + arm);
+    ctx.moveTo(width - inset, height - inset - arm); ctx.lineTo(width - inset, height - inset); ctx.lineTo(width - inset - arm, height - inset);
+    ctx.moveTo(inset + arm, height - inset); ctx.lineTo(inset, height - inset); ctx.lineTo(inset, height - inset - arm);
+    ctx.stroke();
+    // plan view of a two-input machine
+    var planX = Math.max(height * 0.75, width * 0.2), planY = height * 0.46, planHalf = height * 0.24;
+    ctx.strokeRect(planX - planHalf, planY - planHalf, planHalf * 2, planHalf * 2);
+    circle(ctx, planX, planY - planHalf * 0.2, planHalf * 0.38); ctx.stroke();
+    ctx.strokeRect(planX - planHalf * 0.75, planY + planHalf * 0.35, planHalf * 0.5, planHalf * 0.4);
+    ctx.strokeRect(planX + planHalf * 0.25, planY + planHalf * 0.35, planHalf * 0.5, planHalf * 0.4);
+    ctx.strokeStyle = '#f4a93c';
+    ctx.strokeRect(planX - planHalf * 0.25, planY - planHalf * 1.25, planHalf * 0.5, planHalf * 0.25);
+    ctx.strokeStyle = faint;
+    if (ctx.setLineDash) ctx.setLineDash([height * 0.04, height * 0.02, height * 0.01, height * 0.02]);
+    ctx.beginPath();
+    ctx.moveTo(planX - planHalf * 1.3, planY - planHalf * 0.2); ctx.lineTo(planX + planHalf * 1.3, planY - planHalf * 0.2);
+    ctx.moveTo(planX, planY - planHalf * 1.5); ctx.lineTo(planX, planY + planHalf * 1.3);
+    ctx.stroke();
+    if (ctx.setLineDash) ctx.setLineDash([]);
+    // dimension lines
+    ctx.lineWidth = Math.max(1, height * 0.008);
+    var dimensionY = planY + planHalf * 1.45;
+    ctx.beginPath();
+    ctx.moveTo(planX - planHalf, planY + planHalf * 1.05); ctx.lineTo(planX - planHalf, dimensionY + height * 0.03);
+    ctx.moveTo(planX + planHalf, planY + planHalf * 1.05); ctx.lineTo(planX + planHalf, dimensionY + height * 0.03);
+    ctx.stroke();
+    dimensionLine(ctx, planX - planHalf, dimensionY, planX + planHalf, dimensionY, height * 0.035);
+    var dimensionX = planX - planHalf * 1.45;
+    dimensionLine(ctx, dimensionX, planY - planHalf, dimensionX, planY + planHalf, height * 0.035);
+    // gear elevation, when the banner is wide enough
+    if (width / height > 2.4) {
+      var gearX = width * 0.43, gearY = height * 0.5, gearRadius = height * 0.24, teeth = 14;
+      ctx.lineWidth = Math.max(1, height * 0.012); ctx.strokeStyle = teal;
+      ctx.beginPath();
+      for (index = 0; index < teeth * 2; index++) {
+        var toothAngle = (index / (teeth * 2)) * TAU, toothRadius = index % 2 ? gearRadius : gearRadius * 1.14;
+        var nextAngle = ((index + 1) / (teeth * 2)) * TAU;
+        if (index === 0) ctx.moveTo(gearX + Math.cos(toothAngle) * toothRadius, gearY + Math.sin(toothAngle) * toothRadius);
+        else ctx.lineTo(gearX + Math.cos(toothAngle) * toothRadius, gearY + Math.sin(toothAngle) * toothRadius);
+        ctx.lineTo(gearX + Math.cos(nextAngle) * toothRadius, gearY + Math.sin(nextAngle) * toothRadius);
+      }
+      ctx.closePath(); ctx.stroke();
+      circle(ctx, gearX, gearY, gearRadius * 0.35); ctx.stroke();
+      ctx.strokeStyle = faint;
+      for (index = 0; index < 6; index++) {
+        var boltAngle = (index / 6) * TAU;
+        circle(ctx, gearX + Math.cos(boltAngle) * gearRadius * 0.65, gearY + Math.sin(boltAngle) * gearRadius * 0.65, gearRadius * 0.08); ctx.stroke();
+      }
+    }
+    // amber route with nodes
+    var route = blueprintRoute(width, height);
+    cacheEntry.route = route;
+    ctx.strokeStyle = 'rgba(244,169,60,0.75)'; ctx.lineWidth = Math.max(1, height * 0.014);
+    if (ctx.setLineDash) ctx.setLineDash([height * 0.035, height * 0.025]);
+    ctx.beginPath(); ctx.moveTo(route[0], route[1]);
+    for (index = 2; index < route.length; index += 2) ctx.lineTo(route[index], route[index + 1]);
+    ctx.stroke();
+    if (ctx.setLineDash) ctx.setLineDash([]);
+    ctx.fillStyle = '#f4a93c';
+    var node = Math.max(2, height * 0.03);
+    for (index = 0; index < route.length; index += 2) ctx.fillRect(route[index] - node / 2, route[index + 1] - node / 2, node, node);
+    // title block (text-free: bars stand in for lettering)
+    var blockWidth = Math.min(height * 1.2, width * 0.3), blockLeft = width - inset - blockWidth - height * 0.04;
+    var blockTop = height * 0.66, blockBottom = height - inset - height * 0.04;
+    ctx.strokeStyle = teal; ctx.lineWidth = Math.max(1, height * 0.01);
+    ctx.strokeRect(blockLeft, blockTop, blockWidth, blockBottom - blockTop);
+    ctx.beginPath();
+    ctx.moveTo(blockLeft, (blockTop + blockBottom) / 2); ctx.lineTo(blockLeft + blockWidth, (blockTop + blockBottom) / 2);
+    ctx.moveTo(blockLeft + blockWidth * 0.62, blockTop); ctx.lineTo(blockLeft + blockWidth * 0.62, blockBottom);
+    ctx.stroke();
+    ctx.fillStyle = faint;
+    var barHeight = Math.max(1, height * 0.018);
+    ctx.fillRect(blockLeft + blockWidth * 0.05, blockTop + (blockBottom - blockTop) * 0.18, blockWidth * 0.45, barHeight);
+    ctx.fillRect(blockLeft + blockWidth * 0.05, blockTop + (blockBottom - blockTop) * 0.68, blockWidth * 0.3, barHeight);
+    ctx.fillRect(blockLeft + blockWidth * 0.68, blockTop + (blockBottom - blockTop) * 0.18, blockWidth * 0.25, barHeight);
+    ctx.fillStyle = 'rgba(244,169,60,0.8)';
+    ctx.fillRect(blockLeft + blockWidth * 0.68, blockTop + (blockBottom - blockTop) * 0.68, blockWidth * 0.18, barHeight);
+  }
+  function paintBlueprintAnimated(ctx, width, height, time, cacheEntry) {
+    // scan line sweeping left to right
+    var scanX = ((time * 0.11) % 1) * width * 1.2 - width * 0.1, scanWidth = height * 0.18;
+    ctx.fillStyle = 'rgba(63,208,196,0.035)'; ctx.fillRect(scanX - scanWidth, 0, scanWidth, height);
+    ctx.fillStyle = 'rgba(63,208,196,0.06)'; ctx.fillRect(scanX - scanWidth * 0.35, 0, scanWidth * 0.35, height);
+    ctx.fillStyle = 'rgba(168,244,236,0.35)'; ctx.fillRect(scanX, 0, Math.max(1, height * 0.008), height);
+    // a pulse travelling along the amber route
+    var route = cacheEntry && cacheEntry.route;
+    if (!route) return;
+    var total = 0, index;
+    for (index = 2; index < route.length; index += 2) total += Math.abs(route[index] - route[index - 2]) + Math.abs(route[index + 1] - route[index - 1]);
+    var travelled = ((time * 0.25) % 1) * total;
+    for (index = 2; index < route.length; index += 2) {
+      var segment = Math.abs(route[index] - route[index - 2]) + Math.abs(route[index + 1] - route[index - 1]);
+      if (travelled <= segment) {
+        var fraction = segment ? travelled / segment : 0;
+        var pulseX = route[index - 2] + (route[index] - route[index - 2]) * fraction, pulseY = route[index - 1] + (route[index + 1] - route[index - 1]) * fraction;
+        var previousComposite = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = 'rgba(244,169,60,0.3)'; circle(ctx, pulseX, pulseY, height * 0.05); ctx.fill();
+        ctx.fillStyle = '#ffd08a'; circle(ctx, pulseX, pulseY, Math.max(1.5, height * 0.018)); ctx.fill();
+        ctx.globalCompositeOperation = previousComposite;
+        break;
+      }
+      travelled -= segment;
+    }
+    // blinking end node
+    if (Math.sin(time * 5) > 0) {
+      var node = Math.max(3, height * 0.05);
+      ctx.strokeStyle = '#ffd08a'; ctx.lineWidth = Math.max(1, height * 0.01);
+      ctx.strokeRect(route[route.length - 2] - node / 2, route[route.length - 1] - node / 2, node, node);
+    }
+  }
+
+  var BANNERS = {
+    act1: { paintStatic: paintLandfallStatic, paintAnimated: paintLandfallAnimated },
+    act2: { paintStatic: paintSurveyStatic, paintAnimated: paintSurveyAnimated },
+    challenge: { paintStatic: paintBlueprintStatic, paintAnimated: paintBlueprintAnimated }
+  };
+
+  function paintBannerStatic(banner, ctx, width, height, entry) {
+    banner.paintStatic(ctx, width, height, entry);
+    // soft bottom fade toward the page colour so DOM titles can sit on top
+    var fade = ctx.createLinearGradient(0, height * 0.55, 0, height);
+    fade.addColorStop(0, 'rgba(17,14,24,0)'); fade.addColorStop(1, 'rgba(17,14,24,0.5)');
+    ctx.fillStyle = fade; ctx.fillRect(0, height * 0.55, width, height * 0.45);
+  }
+
+  // Draws the banner into the rect (0, 0, widthPx, heightPx) of the current transform.
+  function drawChapterBanner(ctx, chapterId, widthPx, heightPx, time) {
+    var width = Math.max(1, +widthPx || 0), height = Math.max(1, +heightPx || 0);
+    var banner = BANNERS[chapterId] || BANNERS.act1;
+    var animationTime = reducedMotion ? 1.2 : (+time || 0);
+    var scale = contextScale(ctx), pixelWidth = Math.ceil(width * scale), pixelHeight = Math.ceil(height * scale);
+    var key = (BANNERS[chapterId] ? chapterId : 'act1') + '|' + width + 'x' + height + '|' + pixelWidth;
+    var entry = bannerCache[key];
+    if (!entry) {
+      if (bannerCount > 24) { bannerCache = {}; bannerCount = 0; }
+      entry = { canvas: null, route: null };
+      var canvas = makeCanvas(pixelWidth, pixelHeight), layerCtx = canvas && canvas.getContext('2d');
+      if (layerCtx) {
+        layerCtx.setTransform(scale, 0, 0, scale, 0, 0);
+        paintBannerStatic(banner, layerCtx, width, height, entry);
+        entry.canvas = canvas;
+      }
+      bannerCache[key] = entry; bannerCount++;
+    }
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, width, height); ctx.clip();
+    if (entry.canvas) ctx.drawImage(entry.canvas, 0, 0, pixelWidth, pixelHeight, 0, 0, width, height);
+    else paintBannerStatic(banner, ctx, width, height, entry);
+    banner.paintAnimated(ctx, width, height, animationTime, entry);
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------- medals
+  var MEDALS = {
+    cells: { rim: '#3fd0c4', light: '#a8f4ec', dark: '#1c6762' },
+    cost: { rim: '#f4a93c', light: '#ffd08a', dark: '#8e5c1f' },
+    power: { rim: '#62e39b', light: '#c8ffdc', dark: '#24704a' },
+    all: { rim: '#ffcf6a', light: '#fff1c4', dark: '#9a6a1c' }
+  };
+  function hexagonPath(ctx, centerX, centerY, radius) {
+    ctx.beginPath();
+    for (var index = 0; index < 6; index++) {
+      var angle = -HALF_PI + index * TAU / 6;
+      if (index === 0) ctx.moveTo(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+      else ctx.lineTo(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+    }
+    ctx.closePath();
+  }
+  function medalIcon(ctx, kindName, centerX, centerY, radius, color, accent) {
+    var index;
+    ctx.fillStyle = color; ctx.strokeStyle = color;
+    if (kindName === 'cells') { // footprint: 2x2 tiles, one lit
+      var tile = radius * 0.42, gap = radius * 0.12;
+      for (index = 0; index < 4; index++) {
+        var tileX = centerX + (index % 2 ? gap / 2 : -gap / 2 - tile), tileY = centerY + (index > 1 ? gap / 2 : -gap / 2 - tile);
+        ctx.fillStyle = index === 0 ? accent : color;
+        ctx.fillRect(tileX, tileY, tile, tile);
+      }
+    } else if (kindName === 'cost') { // credit chip: ringed coin with a notch bar
+      ctx.lineWidth = Math.max(1, radius * 0.14);
+      circle(ctx, centerX, centerY, radius * 0.62); ctx.stroke();
+      circle(ctx, centerX, centerY, radius * 0.32); ctx.fill();
+      ctx.fillStyle = accent;
+      ctx.fillRect(centerX - radius * 0.06, centerY - radius * 0.9, radius * 0.12, radius * 0.3);
+      ctx.fillRect(centerX - radius * 0.06, centerY + radius * 0.6, radius * 0.12, radius * 0.3);
+    } else if (kindName === 'power') { // lightning bolt
+      polygon(ctx, [centerX + radius * 0.18, centerY - radius * 0.85, centerX - radius * 0.5, centerY + radius * 0.12, centerX - radius * 0.02, centerY + radius * 0.12,
+        centerX - radius * 0.2, centerY + radius * 0.85, centerX + radius * 0.5, centerY - radius * 0.15, centerX + radius * 0.02, centerY - radius * 0.15]);
+      ctx.fill();
+    } else { // all: five-point star
+      ctx.beginPath();
+      for (index = 0; index < 10; index++) {
+        var starAngle = -HALF_PI + index * Math.PI / 5, starRadius = index % 2 ? radius * 0.38 : radius * 0.88;
+        if (index === 0) ctx.moveTo(centerX + Math.cos(starAngle) * starRadius, centerY + Math.sin(starAngle) * starRadius);
+        else ctx.lineTo(centerX + Math.cos(starAngle) * starRadius, centerY + Math.sin(starAngle) * starRadius);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = accent; circle(ctx, centerX, centerY, radius * 0.16); ctx.fill();
+    }
+  }
+  // kind: 'cells' | 'cost' | 'power' | 'all'; earned = false draws a dim, empty slot
+  function drawMedal(ctx, kindName, centerX, centerY, sizePx, earned) {
+    var style = MEDALS[kindName] || MEDALS.all, isAll = kindName === 'all';
+    var radius = (+sizePx || 32) * 0.42, ribbonWidth = radius * 0.42;
+    if (earned === false) {
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      hexagonPath(ctx, centerX, centerY, radius); ctx.fillStyle = '#15121e'; ctx.fill();
+      ctx.lineWidth = Math.max(1, radius * 0.08); ctx.strokeStyle = '#4a4366';
+      if (ctx.setLineDash) ctx.setLineDash([radius * 0.18, radius * 0.12]);
+      ctx.stroke();
+      if (ctx.setLineDash) ctx.setLineDash([]);
+      medalIcon(ctx, kindName, centerX, centerY, radius * 0.5, '#4a4366', '#5b5380');
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    // ribbon tails
+    var ribbonTop = centerY + radius * 0.35, ribbonBottom = centerY + radius * 1.18;
+    for (var side = -1; side <= 1; side += 2) {
+      var ribbonX = centerX + side * radius * 0.42;
+      polygon(ctx, [ribbonX - ribbonWidth / 2, ribbonTop, ribbonX + ribbonWidth / 2, ribbonTop, ribbonX + ribbonWidth / 2 + side * radius * 0.12, ribbonBottom,
+        ribbonX + side * radius * 0.06, ribbonBottom - radius * 0.16, ribbonX - ribbonWidth / 2 + side * radius * 0.12, ribbonBottom]);
+      ctx.fillStyle = side < 0 ? style.dark : (isAll ? '#3fd0c4' : style.rim); ctx.fill();
+    }
+    // drop shadow
+    hexagonPath(ctx, centerX + radius * 0.06, centerY + radius * 0.1, radius); ctx.fillStyle = 'rgba(6,4,12,0.45)'; ctx.fill();
+    // rim: dark edge, two-tone bevel (lit top-left)
+    hexagonPath(ctx, centerX, centerY, radius); ctx.fillStyle = '#120f18'; ctx.fill();
+    hexagonPath(ctx, centerX, centerY, radius * 0.93); ctx.fillStyle = style.dark; ctx.fill();
+    ctx.save(); hexagonPath(ctx, centerX, centerY, radius * 0.93); ctx.clip();
+    polygon(ctx, [centerX - radius, centerY + radius * 0.6, centerX - radius, centerY - radius, centerX + radius, centerY - radius, centerX + radius * 0.6, centerY - radius * 0.1]);
+    ctx.fillStyle = style.rim; ctx.fill();
+    ctx.restore();
+    if (isAll) { // tri-colour inner ring on a dark band: footprint, cost, power
+      hexagonPath(ctx, centerX, centerY, radius * 0.8); ctx.fillStyle = '#1b1726'; ctx.fill();
+      var ringColors = [MEDALS.cells.rim, MEDALS.cost.rim, MEDALS.power.rim];
+      ctx.lineWidth = Math.max(1, radius * 0.1);
+      for (var segment = 0; segment < 3; segment++) {
+        ctx.strokeStyle = ringColors[segment];
+        ctx.beginPath(); ctx.arc(centerX, centerY, radius * 0.69, -HALF_PI + segment * TAU / 3 + 0.12, -HALF_PI + (segment + 1) * TAU / 3 - 0.12); ctx.stroke();
+      }
+    }
+    // inner plate
+    hexagonPath(ctx, centerX, centerY, radius * (isAll ? 0.56 : 0.72)); ctx.fillStyle = isAll ? '#241f33' : '#1b1726'; ctx.fill();
+    ctx.lineWidth = Math.max(1, radius * 0.05); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+    medalIcon(ctx, kindName, centerX, centerY, radius * (isAll ? 0.4 : 0.48), style.rim, style.light);
+    // sheen
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = Math.max(1, radius * 0.07); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(centerX - radius * 0.62, centerY - radius * 0.28); ctx.lineTo(centerX - radius * 0.2, centerY - radius * 0.72); ctx.stroke();
+    if (isAll) { // small side chevrons for the full set
+      ctx.fillStyle = style.rim;
+      for (var chevronSide = -1; chevronSide <= 1; chevronSide += 2) {
+        var chevronX = centerX + chevronSide * radius * 1.12;
+        polygon(ctx, [chevronX, centerY - radius * 0.3, chevronX + chevronSide * radius * 0.22, centerY, chevronX, centerY + radius * 0.3, chevronX + chevronSide * radius * 0.08, centerY]);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------- public API
+  FF.artFx = {
+    spawnDelivery: spawnDelivery,
+    spawnCraft: spawnCraft,
+    spawnPlace: spawnPlace,
+    spawnRemove: spawnRemove,
+    celebrate: celebrate,
+    update: update,
+    draw: draw,
+    drawChapterBanner: drawChapterBanner,
+    drawMedal: drawMedal,
+    setReducedMotion: function (enabled) { reducedMotion = !!enabled; },
+    isReducedMotion: function () { return reducedMotion; },
+    setCellSize: function (pixels) { if (+pixels > 0) cellSize = +pixels; },
+    isBusy: function () { return liveCount > 0 || celebration.active; },
+    isCelebrating: function () { return celebration.active; },
+    activeCount: function () { return liveCount; },
+    clear: clearAll,
+    clearBannerCache: function () { bannerCache = {}; bannerCount = 0; }
+  };
+
+  if (typeof module !== 'undefined') module.exports = FF.artFx;
+})();
+
+</script>
+<script>
 /* ---- src/audio.js ---- */
 /* Ferrite Frontier - FF.audio: fully synthesized WebAudio sound. Classic script, no deps. */
 (function (root) {
@@ -2742,9 +4121,322 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     } catch (error) {}
   }
   function isMuted() { return muted; }
+  // The shared AudioContext (null before init() or when WebAudio is unavailable); FF.music reuses it.
+  function getContext() { return ready() ? ctx : null; }
 
-  FF.audio = { init: init, play: play, setHum: setHum, setMuted: setMuted, isMuted: isMuted };
+  FF.audio = { init: init, play: play, setHum: setHum, setMuted: setMuted, isMuted: isMuted, getContext: getContext };
   if (typeof module !== 'undefined' && module.exports) module.exports = FF.audio;
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
+
+</script>
+<script>
+/* ---- src/music.js ---- */
+/* Ferrite Frontier - FF.music: procedural background music, fully synthesized with WebAudio. Classic script, no deps. */
+(function (root) {
+  'use strict';
+  var FF = root.FF = root.FF || {};
+
+  var MUSIC_LEVEL = 0.35;          // overall music loudness before the user volume
+  var LOOKAHEAD_SECONDS = 0.6;     // how far ahead of the audio clock notes get scheduled
+  var SCHEDULER_INTERVAL_MS = 120; // how often the scheduler wakes up
+  var FADE_IN_SECONDS = 3;
+  var FADE_OUT_SECONDS = 2.5;
+  var STEPS_PER_BAR = 16;          // sixteenth-note grid, four beats per bar
+  var STEPS_PER_CHORD = STEPS_PER_BAR * 2;
+  var MAX_TRANSIENT_NODES = 20;    // plus ~10 persistent nodes keeps the whole graph under 30
+
+  // Each mood: key root (MIDI), scale, chord roots (semitones above the key root), tempo, melody density,
+  // and a minimum "busyness" so the tougher moods always carry a little percussion.
+  var MOODS = {
+    title:     { rootMidi: 50, scale: [0, 3, 5, 7, 10],          chordRoots: [0, 8, 3, 10], bpm: 56, melodyChance: 0.22, minimumBusyness: 0 },
+    act1:      { rootMidi: 50, scale: [0, 3, 5, 7, 10],          chordRoots: [0, 3, 8, 10], bpm: 70, melodyChance: 0.26, minimumBusyness: 0 },
+    act2:      { rootMidi: 45, scale: [0, 2, 3, 5, 7, 9, 10],    chordRoots: [0, 5, 3, 10], bpm: 80, melodyChance: 0.28, minimumBusyness: 0.1 },
+    challenge: { rootMidi: 52, scale: [0, 1, 3, 5, 7, 8, 10],    chordRoots: [0, 1, 8, 5],  bpm: 96, melodyChance: 0.32, minimumBusyness: 0.25 }
+  };
+  var PAD_INTERVALS = [0, 7, 14]; // open root / fifth / ninth: calm and slightly unresolved
+
+  var ctx = null, outputGain = null, compressor = null, fadeGain = null, noiseBuffer = null;
+  var ownsContext = false, unavailable = false;
+  var muted = false, volume = 0.8, intensity = 0, appliedIntensity = -1;
+  var running = false, stopping = false;
+  var mood = null, moodName = null;
+  var pad = null;                  // persistent pad voices while music plays
+  var schedulerTimer = null, teardownTimer = null;
+  var nextStepTime = 0, stepIndex = 0, chordIndex = -1, melodyPosition = 0;
+  var liveTransientNodes = 0;
+  var randomState = 1;
+
+  // ---- helpers ----
+  function seedRandom(seed) { randomState = (seed >>> 0) || 1; }
+  function random() { // mulberry32: small, fast, good enough for composition choices
+    randomState = (randomState + 0x6D2B79F5) >>> 0;
+    var value = randomState;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  }
+  function midiToFrequency(midiNote) { return 440 * Math.pow(2, (midiNote - 69) / 12); }
+  function clamp01(value) { value = +value; return isFinite(value) ? Math.max(0, Math.min(1, value)) : 0; }
+  function unrefTimer(timer) { if (timer && typeof timer.unref === 'function') timer.unref(); return timer; }
+  function ready() { return !!(ctx && outputGain && !unavailable); }
+  function busyness() { return Math.max(intensity, mood ? mood.minimumBusyness : 0); }
+
+  // Disconnect a finished source and the nodes that only existed to carry it, and give their slots back.
+  function releaseWhenDone(source, carriers, isTransient) {
+    if (isTransient) liveTransientNodes += carriers.length;
+    var earlier = source.onended;
+    source.onended = function () {
+      if (typeof earlier === 'function') earlier();
+      for (var index = 0; index < carriers.length; index++) { try { carriers[index].disconnect(); } catch (error) { /* ignore */ } }
+      if (isTransient) liveTransientNodes -= carriers.length;
+    };
+  }
+  function hasRoomFor(nodeCount) { return liveTransientNodes + nodeCount <= MAX_TRANSIENT_NODES; }
+
+  function applyOutputLevel() {
+    if (!ready()) return;
+    var nowSeconds = ctx.currentTime;
+    outputGain.gain.cancelScheduledValues(nowSeconds);
+    outputGain.gain.setTargetAtTime(muted ? 0 : volume * MUSIC_LEVEL, nowSeconds, 0.08);
+  }
+
+  // ---- init ----
+  function init() {
+    if (unavailable) return;
+    try {
+      if (!ctx) {
+        if (FF.audio && typeof FF.audio.getContext === 'function') {
+          ctx = FF.audio.getContext();
+          if (!ctx && typeof FF.audio.init === 'function') { FF.audio.init(); ctx = FF.audio.getContext(); }
+        }
+        if (!ctx) {
+          var AudioContextClass = root.AudioContext || root.webkitAudioContext;
+          if (!AudioContextClass) { unavailable = true; return; }
+          ctx = new AudioContextClass();
+          ownsContext = true;
+        }
+        compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -20; compressor.knee.value = 24; compressor.ratio.value = 3;
+        compressor.attack.value = 0.01; compressor.release.value = 0.3;
+        outputGain = ctx.createGain();
+        outputGain.gain.value = muted ? 0 : volume * MUSIC_LEVEL;
+        fadeGain = ctx.createGain();
+        fadeGain.gain.value = 0;
+        fadeGain.connect(outputGain); outputGain.connect(compressor); compressor.connect(ctx.destination);
+        var length = ctx.sampleRate * 2, buffer = ctx.createBuffer(1, length, ctx.sampleRate), samples = buffer.getChannelData(0);
+        for (var index = 0; index < length; index++) samples[index] = Math.random() * 2 - 1;
+        noiseBuffer = buffer;
+      }
+      if (ctx.state !== 'running' && ctx.resume) {
+        var pending = ctx.resume();
+        if (pending && pending.catch) pending.catch(function () {});
+      }
+    } catch (error) { unavailable = true; ctx = null; outputGain = null; }
+  }
+
+  // ---- pad (persistent, slowly evolving) ----
+  function buildPad() {
+    var padFilter = ctx.createBiquadFilter();
+    padFilter.type = 'lowpass'; padFilter.frequency.value = 500; padFilter.Q.value = 0.8;
+    var padGain = ctx.createGain();
+    padGain.gain.value = 0.18;
+    padFilter.connect(padGain); padGain.connect(fadeGain);
+    var voices = PAD_INTERVALS.map(function (interval, voiceIndex) {
+      var oscillator = ctx.createOscillator();
+      oscillator.type = voiceIndex === 1 ? 'triangle' : 'sawtooth';
+      oscillator.detune.value = (voiceIndex - 1) * 7;
+      oscillator.frequency.value = 110;
+      oscillator.connect(padFilter);
+      oscillator.start();
+      return oscillator;
+    });
+    // slow filter sweep so the pad breathes
+    var sweep = ctx.createOscillator(), sweepDepth = ctx.createGain();
+    sweep.frequency.value = 0.07; sweepDepth.gain.value = 180;
+    sweep.connect(sweepDepth); sweepDepth.connect(padFilter.frequency); sweep.start();
+    pad = { voices: voices, filter: padFilter, gain: padGain, sweep: sweep, sweepDepth: sweepDepth };
+  }
+  function teardownPad() {
+    if (!pad) return;
+    var finished = pad;
+    pad = null;
+    var all = finished.voices.concat([finished.sweep]);
+    var carriers = all.concat([finished.filter, finished.gain, finished.sweepDepth]);
+    all.forEach(function (source) { try { source.stop(); } catch (error) { /* ignore */ } });
+    // the last source to end releases every carrier
+    releaseWhenDone(finished.sweep, carriers, false);
+    // in case onended never fires (mocks, closed context), disconnect now as well
+    carriers.forEach(function (node) { try { node.disconnect(); } catch (error) { /* ignore */ } });
+  }
+  function moveChord(newChordIndex, timeConstant) {
+    if (!pad) return;
+    var chordRoot = mood.rootMidi - 12 + mood.chordRoots[newChordIndex % mood.chordRoots.length];
+    var nowSeconds = ctx.currentTime;
+    pad.voices.forEach(function (oscillator, voiceIndex) {
+      oscillator.frequency.setTargetAtTime(midiToFrequency(chordRoot + PAD_INTERVALS[voiceIndex]), nowSeconds, timeConstant);
+    });
+  }
+  function applyIntensityToPad() {
+    if (!pad || Math.abs(busyness() - appliedIntensity) < 0.01) return;
+    appliedIntensity = busyness();
+    var nowSeconds = ctx.currentTime;
+    pad.filter.frequency.setTargetAtTime(450 + 1100 * appliedIntensity, nowSeconds, 1.2);
+    pad.gain.gain.setTargetAtTime(0.16 + 0.1 * appliedIntensity, nowSeconds, 1.2);
+  }
+
+  // ---- one-shot voices (transient, released when done) ----
+  function playPluck(startTime, midiNote, strength) {
+    if (!hasRoomFor(2)) return;
+    var oscillator = ctx.createOscillator(), gain = ctx.createGain();
+    var duration = 1.6;
+    oscillator.type = 'triangle';
+    oscillator.frequency.value = midiToFrequency(midiNote);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(0.22 * strength, startTime + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    oscillator.connect(gain); gain.connect(fadeGain);
+    oscillator.start(startTime); oscillator.stop(startTime + duration + 0.05);
+    releaseWhenDone(oscillator, [oscillator, gain], true);
+  }
+  function playThump(startTime, strength) {
+    if (!hasRoomFor(2)) return;
+    var oscillator = ctx.createOscillator(), gain = ctx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(95, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(40, startTime + 0.25);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(0.5 * strength, startTime + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.3);
+    oscillator.connect(gain); gain.connect(fadeGain);
+    oscillator.start(startTime); oscillator.stop(startTime + 0.35);
+    releaseWhenDone(oscillator, [oscillator, gain], true);
+  }
+  function playTick(startTime, strength, brightness) {
+    if (!hasRoomFor(3)) return;
+    var source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+    source.buffer = noiseBuffer;
+    filter.type = 'bandpass'; filter.frequency.value = brightness; filter.Q.value = 2.5;
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(0.14 * strength, startTime + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.05);
+    source.connect(filter); filter.connect(gain); gain.connect(fadeGain);
+    source.start(startTime, random() * 1.5); source.stop(startTime + 0.08);
+    releaseWhenDone(source, [source, filter, gain], true);
+  }
+
+  // ---- composition ----
+  function pickMelodyNote() {
+    var scale = mood.scale, span = scale.length * 2; // two octaves of the scale
+    melodyPosition += Math.floor(random() * 5) - 2;  // random walk of -2..+2 scale steps
+    if (melodyPosition < 0) melodyPosition = 1;
+    if (melodyPosition >= span) melodyPosition = span - 2;
+    var octave = melodyPosition >= scale.length ? 12 : 0;
+    return mood.rootMidi + 24 + octave + scale[melodyPosition % scale.length];
+  }
+  function scheduleStep(step, startTime) {
+    var stepInBar = step % STEPS_PER_BAR;
+    var level = busyness();
+
+    var newChordIndex = Math.floor(step / STEPS_PER_CHORD);
+    if (newChordIndex !== chordIndex) {
+      chordIndex = newChordIndex;
+      moveChord(chordIndex, 1.5);
+      if (level > 0.5 && hasRoomFor(2)) { // low bass note on each new chord once the factory is busy
+        var bassRoot = mood.rootMidi - 12 + mood.chordRoots[chordIndex % mood.chordRoots.length];
+        playPluck(startTime, bassRoot, 0.9);
+      }
+    }
+
+    // sparse plucked melody on eighth notes, a little denser when busy
+    if (step % 2 === 0 && random() < mood.melodyChance + 0.1 * level) {
+      playPluck(startTime, pickMelodyNote(), 0.55 + 0.45 * random());
+    }
+
+    // soft mechanical percussion, fading in with busyness
+    if (level > 0.15) {
+      var tickChance = (stepInBar % 4 === 2 ? 0.7 : stepInBar % 2 === 0 ? 0.35 : 0.12) * (level - 0.1) * 1.3;
+      if (random() < tickChance) playTick(startTime, 0.5 + 0.5 * level, 2500 + 2500 * random());
+    }
+    if (level > 0.4 && (stepInBar === 0 || (level > 0.7 && stepInBar === 8))) playThump(startTime, 0.5 + 0.5 * level);
+  }
+
+  function schedulerTick() {
+    schedulerTimer = null;
+    if (!running || !ready()) return;
+    try {
+      if (ctx.state === 'running') {
+        var nowSeconds = ctx.currentTime;
+        if (nextStepTime < nowSeconds - 0.25) nextStepTime = nowSeconds + 0.05; // timers were throttled: do not catch up in a burst
+        applyIntensityToPad();
+        var stepSeconds = 60 / mood.bpm / 4;
+        while (nextStepTime < nowSeconds + LOOKAHEAD_SECONDS) {
+          scheduleStep(stepIndex, nextStepTime);
+          stepIndex++;
+          nextStepTime += stepSeconds;
+        }
+      }
+    } catch (error) { /* never throw out of a timer */ }
+    if (running) schedulerTimer = unrefTimer(setTimeout(schedulerTick, SCHEDULER_INTERVAL_MS));
+  }
+
+  // ---- public API ----
+  function start(moodKey, seed) {
+    if (!ready()) return;
+    try {
+      var newMood = MOODS[moodKey];
+      if (!newMood) return;
+      if (running && !stopping && moodKey === moodName) return;
+      if (teardownTimer) { clearTimeout(teardownTimer); teardownTimer = null; }
+      var wasPlaying = running && !stopping;
+      mood = newMood; moodName = moodKey;
+      stopping = false;
+      if (!wasPlaying) {
+        teardownPad();
+        seedRandom(seed !== undefined ? seed : Math.floor(Math.random() * 4294967296));
+        stepIndex = 0; chordIndex = -1; melodyPosition = 3; appliedIntensity = -1;
+        buildPad();
+        nextStepTime = ctx.currentTime + 0.1;
+        moveChord(0, 0.01);
+      } // otherwise keep playing: a mood switch just changes scale, tempo and chords, and the pad glides over
+      var nowSeconds = ctx.currentTime;
+      fadeGain.gain.cancelScheduledValues(nowSeconds);
+      fadeGain.gain.setValueAtTime(fadeGain.gain.value, nowSeconds);
+      fadeGain.gain.linearRampToValueAtTime(1, nowSeconds + FADE_IN_SECONDS);
+      appliedIntensity = -1;
+      if (!running) { running = true; schedulerTick(); }
+      else if (wasPlaying) moveChord(chordIndex < 0 ? 0 : chordIndex, 2);
+    } catch (error) { /* never throw */ }
+  }
+
+  function stop() {
+    if (!ready() || !running || stopping) return;
+    try {
+      stopping = true;
+      running = false;
+      if (schedulerTimer) { clearTimeout(schedulerTimer); schedulerTimer = null; }
+      var nowSeconds = ctx.currentTime;
+      fadeGain.gain.cancelScheduledValues(nowSeconds);
+      fadeGain.gain.setValueAtTime(fadeGain.gain.value, nowSeconds);
+      fadeGain.gain.linearRampToValueAtTime(0, nowSeconds + FADE_OUT_SECONDS);
+      teardownTimer = unrefTimer(setTimeout(function () {
+        teardownTimer = null;
+        if (!stopping) return;
+        stopping = false; moodName = null; mood = null;
+        try { teardownPad(); } catch (error) { /* ignore */ }
+      }, (FADE_OUT_SECONDS + 0.2) * 1000));
+    } catch (error) { /* never throw */ }
+  }
+
+  function setIntensity(level) {
+    intensity = clamp01(level);
+    // the UI may call this every frame: the pad only changes when the level moved noticeably (see applyIntensityToPad)
+  }
+  function setVolume(level) { volume = clamp01(level); applyOutputLevel(); }
+  function setMuted(shouldMute) { muted = !!shouldMute; try { applyOutputLevel(); } catch (error) { /* ignore */ } }
+  function isMuted() { return muted; }
+
+  FF.music = { init: init, start: start, stop: stop, setIntensity: setIntensity, setVolume: setVolume, setMuted: setMuted, isMuted: isMuted };
+  if (typeof module !== 'undefined' && module.exports) module.exports = FF.music;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 </script>
@@ -2771,17 +4463,44 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   var audioReady = false;
   function sfx(name) { try { if (audioApi.play) audioApi.play(name); } catch (error) { /* ignore */ } }
   function hum(level) { try { if (audioApi.setHum) audioApi.setHum(level); } catch (error) { /* ignore */ } }
+  // Background music (FF.music, optional): the mood follows the screen/chapter and is started on the first gesture.
+  var musicMood = 'title';
+  function musicCall(method, argument) {
+    try { if (FF.music && FF.music[method]) FF.music[method](argument); } catch (error) { /* music must never break the game */ }
+  }
+  function applyMusicMute() { musicCall('setMuted', !!SAVE.muted || !!SAVE.musicOff); }
+  function setMusicMood(mood) {
+    musicMood = mood;
+    if (audioReady) musicCall('start', mood);
+  }
+  function moodForLevel(level) {
+    var chapter = (level && level.chapter) || '';
+    if (/challenge/i.test(chapter)) return 'challenge';
+    if (/act\s*ii\b/i.test(chapter)) return 'act2';
+    return 'act1';
+  }
   function ensureAudio() {
     if (audioReady) return;
     audioReady = true;
     try { if (audioApi.init) audioApi.init(); if (audioApi.setMuted) audioApi.setMuted(!!SAVE.muted); } catch (error) { /* ignore */ }
+    if (FF.music) { musicCall('init'); applyMusicMute(); musicCall('start', musicMood); }
   }
   function isMuted() { return !!SAVE.muted; }
+  // The main mute button silences everything (effects and music); the music toggle only the music.
   function setMuted(muted) {
     SAVE.muted = !!muted; persist();
     try { if (audioApi.setMuted) audioApi.setMuted(!!muted); } catch (error) { /* ignore */ }
-    var buttons = document.querySelectorAll('[data-mute]');
-    for (var index = 0; index < buttons.length; index++) paintMute(buttons[index]);
+    applyMusicMute();
+    var buttons = document.querySelectorAll('[data-mute], [data-music]');
+    for (var index = 0; index < buttons.length; index++) {
+      if (buttons[index].hasAttribute('data-mute')) paintMute(buttons[index]); else paintMusic(buttons[index]);
+    }
+  }
+  function setMusicOff(off) {
+    SAVE.musicOff = !!off; persist();
+    applyMusicMute();
+    var buttons = document.querySelectorAll('[data-music]');
+    for (var index = 0; index < buttons.length; index++) paintMusic(buttons[index]);
   }
 
   // ------------------------------------------------------------------ storage (every access guarded)
@@ -2939,6 +4658,23 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     paintMute(button);
     return button;
   }
+  // Small music on/off toggle; rendered only when FF.music is present.
+  function musicButton() {
+    if (!FF.music) return null;
+    var button = make('button', { class: 'btn icon-btn music-btn', 'data-music': '1', type: 'button',
+      onclick: function () { ensureAudio(); setMusicOff(!SAVE.musicOff); sfx('click'); } });
+    paintMusic(button);
+    return button;
+  }
+  function paintMusic(button) {
+    var off = !!SAVE.musicOff, silenced = off || isMuted();
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17V6l10-2v11" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/><circle cx="6.5" cy="17.5" r="2.5" fill="currentColor"/><circle cx="16.5" cy="15.5" r="2.5" fill="currentColor"/>' +
+      (off ? '<path d="M4 4l16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' : '') + '</svg>';
+    button.setAttribute('aria-label', off ? 'Turn music on' : 'Turn music off');
+    button.setAttribute('aria-pressed', off ? 'false' : 'true');
+    button.title = off ? 'Music off (N)' : (isMuted() ? 'Music on, but all sound is muted (N)' : 'Music on (N)');
+    button.classList.toggle('is-off', silenced);
+  }
   function paintMute(button) {
     var muted = isMuted();
     button.innerHTML = muted
@@ -2998,12 +4734,13 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function showTitle() {
     leavePlay();
     screen = 'title';
+    setMusicMood('title');
     var canvas = make('canvas', { class: 'title-bg', 'aria-hidden': 'true' });
     var anyDone = LEVELS.some(function (level) { return rec(level.id).done; });
     var node = make('main', { class: 'screen title-screen' },
       canvas,
       make('div', { class: 'title-veil' }),
-      make('div', { class: 'title-top' }, muteButton()),
+      make('div', { class: 'title-top' }, musicButton(), muteButton()),
       make('div', { class: 'title-card' },
         make('div', { class: 'eyebrow', text: 'Meridian Extraction Co. / Kessa-4 field office' }),
         make('h1', { class: 'logo' }, make('span', { text: 'Ferrite' }), make('span', { class: 'logo-2', text: 'Frontier' })),
@@ -3049,6 +4786,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function showList(focusId) {
     leavePlay();
     screen = 'list';
+    setMusicMood('title');
     var cards = LEVELS.map(function (level, levelIndex) {
       var record = SAVE.levels[level.id] || {}, open = levelUnlocked(levelIndex), best = record.best || {}, par = level.par || {};
       var state = record.done ? 'done' : open ? 'open' : 'locked';
@@ -3103,7 +4841,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('header', { class: 'bar' },
         make('button', { class: 'btn ghost', type: 'button', onclick: function () { sfx('click'); showTitle(); } }, '← Title'),
         make('div', { class: 'bar-title' }, make('span', { class: 'eyebrow', text: 'Contract board' }), make('span', { class: 'bar-sub', text: done + ' / ' + LEVELS.length + ' complete' })),
-        muteButton()),
+        musicButton(), muteButton()),
       make('p', { class: 'list-intro', text: 'Each contract wants a product delivered at a steady rate. Meet it, then come back and beat par: fewer cells, lower cost, less power. Lower is better.' }),
       LEVELS.length ? sections : make('p', { class: 'list-intro', text: 'No contracts found (levels failed to load).' })
     );
@@ -3141,6 +4879,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       });
     }
     screen = 'play';
+    setMusicMood(moodForLevel(level));
     try { if (ART.resetAnim) ART.resetAnim(); } catch (error) { /* ignore */ }
     play = {
       idx: idx, level: level, parsed: parsed, sim: sim,
@@ -3170,6 +4909,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       if (play.ro) try { play.ro.disconnect(); } catch (error) { /* ignore */ }
     }
     hum(0);
+    musicCall('setIntensity', 0);
     play = null; titleState = null;
   }
 
@@ -3184,7 +4924,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('div', { class: 'bar-title' },
         make('span', { class: 'eyebrow', text: contractLabel(play.idx) + (chapterOf(level) ? ' \u00b7 ' + chapterOf(level).replace(/:.*$/, '') : '') }),
         make('span', { class: 'bar-name', text: level.name })),
-      make('div', { class: 'bar-actions' }, dom.hintBtn, dom.speedBtn, dom.pauseBtn, muteButton()));
+      make('div', { class: 'bar-actions' }, dom.hintBtn, dom.speedBtn, dom.pauseBtn, musicButton(), muteButton()));
 
     // brief card
     dom.hintText = make('p', { class: 'hint-text', hidden: true, text: level.hint || 'No hint for this one. Trust the numbers.' });
@@ -3659,6 +5399,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     ensureAudio();
     var key = event.key;
     if (key === 'm' || key === 'M') { setMuted(!isMuted()); return; }
+    if ((key === 'n' || key === 'N') && FF.music) { setMusicOff(!SAVE.musicOff); return; }
     if (screen !== 'play' || !play) {
       if (key === 'Escape' && screen === 'list') showTitle();
       return;
@@ -4249,7 +5990,9 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     }
     play.stalled = stalledNow;
     if (newStall && !play.paused && nowTime - play.lastStallSnd > 2500) { play.lastStallSnd = nowTime; sfx('stall'); }
-    hum(play.paused || !machines ? 0 : working / machines);
+    var busy = play.paused || !machines ? 0 : working / machines;
+    hum(busy);
+    musicCall('setIntensity', busy);
 
     updateHUD(false);
     if (nowTime - play.lastTipAt > 90) { play.lastTipAt = nowTime; updateTip(); if (play.sel) { refreshPop(false); positionPop(); } }
