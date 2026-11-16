@@ -424,193 +424,211 @@ FF.engine = (function () {
     assembler:   { name: 'Assembler',   cost: 10, power: 15, inputs: 'two',      recipes: ['braced_plate', 'coil', 'motor_housing'], accepts: ['back', 'left', 'right'], outputs: ['front'] },
   };
 
-  // internal kinds
-  var K_BELT = 1, K_SPLIT = 2, K_MERGE = 3, K_MINER = 4, K_MACH = 5, K_TERM = 6;
-  var KIND = { belt: K_BELT, belt2: K_BELT, splitter: K_SPLIT, merger: K_MERGE, miner: K_MINER,
-    smelter: K_MACH, constructor: K_MACH, assembler: K_MACH };
-  // relative side codes: 0 front, 1 right, 2 back, 3 left. Priority order back, left, right.
-  var REL_PRIORITY = [2, 3, 1];
-  var REL_BACK_ONLY = [2];
+  // internal building kinds
+  var KIND_BELT = 1, KIND_SPLITTER = 2, KIND_MERGER = 3, KIND_MINER = 4, KIND_MACHINE = 5, KIND_TERMINAL = 6;
+  var KIND_BY_TYPE = { belt: KIND_BELT, belt2: KIND_BELT, splitter: KIND_SPLITTER, merger: KIND_MERGER, miner: KIND_MINER,
+    smelter: KIND_MACHINE, constructor: KIND_MACHINE, assembler: KIND_MACHINE };
+  // relative side codes: 0 front, 1 right, 2 back, 3 left.
+  var SIDES_BACK_LEFT_RIGHT = [2, 3, 1];  // accepted sides, in feeder priority order
+  var SIDES_BACK_ONLY = [2];
   var NO_SIDES = [];
+  var ALL_DIRECTIONS = [0, 1, 2, 3];
+
+  function isLogistic(building) {
+    return building.kind === KIND_BELT || building.kind === KIND_SPLITTER || building.kind === KIND_MERGER;
+  }
+  function turn(direction, steps) { return (((direction + steps) % 4) + 4) % 4; }
 
   // ---------------------------------------------------------------- level helpers
   var parseCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 
   function parseLevel(level) {
     if (parseCache && level && typeof level === 'object') {
-      var hit = parseCache.get(level);
-      if (hit) return hit;
+      var cached = parseCache.get(level);
+      if (cached) return cached;
     }
     var map = level.map || [];
-    var h = level.h || map.length;
-    var w = level.w || (map[0] || '').length;
+    var height = level.h || map.length;
+    var width = level.w || (map[0] || '').length;
     var cells = [], terminal = null;
-    for (var y = 0; y < h; y++) {
+    for (var y = 0; y < height; y++) {
       var row = [], line = map[y] || '';
-      for (var x = 0; x < w; x++) {
-        var ch = line.charAt(x) || '.';
-        var c;
-        if (ch === '#') c = { terrain: 'rock' };
-        else if (ch === 'F') c = { terrain: 'node', ore: 'ferrite_ore' };
-        else if (ch === 'C') c = { terrain: 'node', ore: 'cuprite_ore' };
-        else if (ch === 'T') {
-          if (!terminal) { terminal = { x: x, y: y }; c = { terrain: 'ground', terminal: true }; }
-          else c = { terrain: 'rock' }; // only one terminal per level; extras behave as rock
-        } else c = { terrain: 'ground' };
-        row.push(c);
+      for (var x = 0; x < width; x++) {
+        var symbol = line.charAt(x) || '.';
+        var cell;
+        if (symbol === '#') cell = { terrain: 'rock' };
+        else if (symbol === 'F') cell = { terrain: 'node', ore: 'ferrite_ore' };
+        else if (symbol === 'C') cell = { terrain: 'node', ore: 'cuprite_ore' };
+        else if (symbol === 'T') {
+          if (!terminal) { terminal = { x: x, y: y }; cell = { terrain: 'ground', terminal: true }; }
+          else cell = { terrain: 'rock' }; // only one terminal per level; extras behave as rock
+        } else cell = { terrain: 'ground' };
+        row.push(cell);
       }
       cells.push(row);
     }
-    var res = { w: w, h: h, cells: cells, terminal: terminal };
-    if (parseCache && level && typeof level === 'object') parseCache.set(level, res);
-    return res;
+    var parsed = { w: width, h: height, cells: cells, terminal: terminal };
+    if (parseCache && level && typeof level === 'object') parseCache.set(level, parsed);
+    return parsed;
   }
 
   function defaultRecipe(level, type) {
-    var def = BUILDINGS[type];
-    if (!def) return null;
-    for (var i = 0; i < def.recipes.length; i++) {
-      var r = def.recipes[i];
-      if (!level || !level.recipes || level.recipes.indexOf(r) >= 0) return r;
+    var definition = BUILDINGS[type];
+    if (!definition) return null;
+    for (var recipeIndex = 0; recipeIndex < definition.recipes.length; recipeIndex++) {
+      var recipeId = definition.recipes[recipeIndex];
+      if (!level || !level.recipes || level.recipes.indexOf(recipeId) >= 0) return recipeId;
     }
     return null;
   }
 
-  function isInt(v) { return typeof v === 'number' && (v | 0) === v; }
-  function no(reason) { return { ok: false, reason: reason }; }
+  function isInteger(value) { return typeof value === 'number' && (value | 0) === value; }
+  function refuse(reason) { return { ok: false, reason: reason }; }
 
-  function canPlace(level, placements, p) {
-    if (!p) return no('Nothing to place');
-    var def = BUILDINGS[p.type];
-    if (!def) return no('Unknown building');
-    var L = parseLevel(level);
-    var x = p.x, y = p.y;
-    if (!isInt(x) || !isInt(y) || x < 0 || y < 0 || x >= L.w || y >= L.h) return no('Outside the plot');
-    if (level.unlocks && level.unlocks.indexOf(p.type) < 0) return no('Locked in this contract');
-    var c = L.cells[y][x];
-    if (c.terminal) return no('The terminal is here');
-    if (c.terrain === 'rock') return no('Rock is in the way');
-    if (p.type === 'miner') {
-      if (c.terrain !== 'node') return no('Miners must sit on an ore node');
-    } else if (c.terrain === 'node') return no('Only miners fit on ore nodes');
-    if (p.dir != null && !(p.dir === 0 || p.dir === 1 || p.dir === 2 || p.dir === 3)) return no('Bad direction');
-    if (def.recipes.length) {
-      if (p.recipe != null) {
-        var r = RECIPES[p.recipe];
-        if (!r || r.building !== p.type) return no('That recipe does not fit this building');
-        if (level.recipes && level.recipes.indexOf(p.recipe) < 0) return no('Recipe locked in this contract');
-      } else if (!defaultRecipe(level, p.type)) return no('No recipe available for this building');
+  function canPlace(level, placements, placement) {
+    if (!placement) return refuse('Nothing to place');
+    var definition = BUILDINGS[placement.type];
+    if (!definition) return refuse('Unknown building');
+    var parsed = parseLevel(level);
+    var x = placement.x, y = placement.y;
+    if (!isInteger(x) || !isInteger(y) || x < 0 || y < 0 || x >= parsed.w || y >= parsed.h) return refuse('Outside the plot');
+    if (level.unlocks && level.unlocks.indexOf(placement.type) < 0) return refuse('Locked in this contract');
+    var cell = parsed.cells[y][x];
+    if (cell.terminal) return refuse('The terminal is here');
+    if (cell.terrain === 'rock') return refuse('Rock is in the way');
+    if (placement.type === 'miner') {
+      if (cell.terrain !== 'node') return refuse('Miners must sit on an ore node');
+    } else if (cell.terrain === 'node') return refuse('Only miners fit on ore nodes');
+    var dir = placement.dir;
+    if (dir != null && !(dir === 0 || dir === 1 || dir === 2 || dir === 3)) return refuse('Bad direction');
+    if (definition.recipes.length) {
+      if (placement.recipe != null) {
+        var recipe = RECIPES[placement.recipe];
+        if (!recipe || recipe.building !== placement.type) return refuse('That recipe does not fit this building');
+        if (level.recipes && level.recipes.indexOf(placement.recipe) < 0) return refuse('Recipe locked in this contract');
+      } else if (!defaultRecipe(level, placement.type)) return refuse('No recipe available for this building');
     }
-    var used = def.power;
-    var list = placements || [];
-    for (var i = 0; i < list.length; i++) {
-      var q = list[i];
-      if (q.x === x && q.y === y) return no('Something is already here');
-      var qd = BUILDINGS[q.type];
-      if (qd) used += qd.power;
+    var powerUsed = definition.power;
+    var existingPlacements = placements || [];
+    for (var placementIndex = 0; placementIndex < existingPlacements.length; placementIndex++) {
+      var existing = existingPlacements[placementIndex];
+      if (existing.x === x && existing.y === y) return refuse('Something is already here');
+      var existingDefinition = BUILDINGS[existing.type];
+      if (existingDefinition) powerUsed += existingDefinition.power;
     }
-    if (level.powerCap != null && def.power > 0 && used > level.powerCap) {
-      return no('Over the power budget (' + used + '/' + level.powerCap + ' MW)');
+    if (level.powerCap != null && definition.power > 0 && powerUsed > level.powerCap) {
+      return refuse('Over the power budget (' + powerUsed + '/' + level.powerCap + ' MW)');
     }
     return { ok: true };
   }
 
   function score(placements) {
     var cells = 0, cost = 0, power = 0;
-    for (var i = 0; i < (placements || []).length; i++) {
-      var d = BUILDINGS[placements[i].type];
-      if (!d) continue;
-      cells++; cost += d.cost; power += d.power;
+    for (var placementIndex = 0; placementIndex < (placements || []).length; placementIndex++) {
+      var definition = BUILDINGS[placements[placementIndex].type];
+      if (!definition) continue;
+      cells++; cost += definition.cost; power += definition.power;
     }
     return { cells: cells, cost: cost, power: power };
   }
 
   // ---------------------------------------------------------------- building state
-  function makeBuilding(p, w) {
-    var def = BUILDINGS[p.type];
-    var kind = KIND[p.type];
-    var b = {
-      type: p.type, x: p.x, y: p.y, dir: (p.dir | 0) & 3, recipe: null,
-      kind: kind, def: def, key: p.y * w + p.x,
-      T: def.ticksPerItem || 0,
-      // logistics state
-      item: null, age: 0, from: 0, rr: 0,
+  function makeBuilding(placement, plotWidth) {
+    var definition = BUILDINGS[placement.type];
+    var kind = KIND_BY_TYPE[placement.type];
+    var building = {
+      type: placement.type, x: placement.x, y: placement.y, dir: (placement.dir | 0) & 3, recipe: null,
+      kind: kind, definition: definition, cellIndex: placement.y * plotWidth + placement.x,
+      ticksPerItem: definition.ticksPerItem || 0,
+      // logistics state (belt, splitter, merger): one item, its age in ticks, the direction it entered from
+      item: null, age: 0, entryDir: 0, roundRobin: 0,
       // machine / miner state
-      rec: null, inTypes: NO_SIDES, inNeed: NO_SIDES, inCap: NO_SIDES, inHave: NO_SIDES,
-      outTypes: NO_SIDES, outAmt: NO_SIDES, outCap: NO_SIDES, outHave: NO_SIDES,
-      crafting: false, craftT: 0, timer: 0, pushed: false, misfed: false,
+      recipeDef: null, inputTypes: NO_SIDES, inputNeeded: NO_SIDES, inputCapacity: NO_SIDES, inputCounts: NO_SIDES,
+      outputTypes: NO_SIDES, outputAmounts: NO_SIDES, outputCapacity: NO_SIDES, outputCounts: NO_SIDES,
+      crafting: false, craftTicks: 0, mineTimer: 0, pushed: false, misfed: false,
+      // transfer-pass bookkeeping: the pass this building last acted in; a merger's turn kept for a splitter
+      passNumber: -1, reservedFor: null, reservedPass: -1,
       // topology (filled by rebuild)
-      pulls: [], pullDirs: [], slots: [null, null, null], slotDirs: [0, 0, 0],
-      outs: [null, null, null], outFrom: [0, 0, 0], succ: [], preds: [], deg: 0, done: false,
+      feeders: [], feederDirs: [], mergerSlots: [null, null, null], mergerSlotDirs: [0, 0, 0],
+      splitterTargets: [null, null, null], splitterTargetEntryDirs: [0, 0, 0],
+      downstream: [], upstream: [], unorderedDownstreamCount: 0, ordered: false,
     };
-    if (kind === K_MACH) setRecipeState(b, p.recipe, false);
-    else if (kind === K_MINER) {
-      b.outTypes = [null]; b.outAmt = [1]; b.outCap = [2]; b.outHave = [0];
+    if (kind === KIND_MACHINE) setRecipeState(building, placement.recipe, false);
+    else if (kind === KIND_MINER) {
+      building.outputTypes = [null]; building.outputAmounts = [1]; building.outputCapacity = [2]; building.outputCounts = [0];
     }
-    return b;
+    return building;
   }
 
-  function setRecipeState(b, recipeId, keep) {
-    var r = RECIPES[recipeId];
-    var oldTypes = b.inTypes, oldHave = b.inHave, oldOT = b.outTypes, oldOH = b.outHave;
-    b.recipe = recipeId; b.rec = r;
-    b.inTypes = []; b.inNeed = []; b.inCap = []; b.inHave = [];
-    b.outTypes = []; b.outAmt = []; b.outCap = []; b.outHave = [];
-    var k;
-    for (k in r.inputs) {
-      b.inTypes.push(k); b.inNeed.push(r.inputs[k]); b.inCap.push(2 * r.inputs[k]);
-      var have = 0;
-      if (keep) { var j = oldTypes.indexOf(k); if (j >= 0) have = Math.min(oldHave[j], 2 * r.inputs[k]); }
-      b.inHave.push(have);
+  function setRecipeState(building, recipeId, keepMatchingItems) {
+    var recipe = RECIPES[recipeId];
+    var oldInputTypes = building.inputTypes, oldInputCounts = building.inputCounts;
+    var oldOutputTypes = building.outputTypes, oldOutputCounts = building.outputCounts;
+    building.recipe = recipeId; building.recipeDef = recipe;
+    building.inputTypes = []; building.inputNeeded = []; building.inputCapacity = []; building.inputCounts = [];
+    building.outputTypes = []; building.outputAmounts = []; building.outputCapacity = []; building.outputCounts = [];
+    var itemType, oldIndex;
+    for (itemType in recipe.inputs) {
+      var inputCapacity = 2 * recipe.inputs[itemType];
+      building.inputTypes.push(itemType); building.inputNeeded.push(recipe.inputs[itemType]); building.inputCapacity.push(inputCapacity);
+      var inputKept = 0;
+      if (keepMatchingItems) { oldIndex = oldInputTypes.indexOf(itemType); if (oldIndex >= 0) inputKept = Math.min(oldInputCounts[oldIndex], inputCapacity); }
+      building.inputCounts.push(inputKept);
     }
-    for (k in r.outputs) {
-      b.outTypes.push(k); b.outAmt.push(r.outputs[k]); b.outCap.push(Math.max(2, 2 * r.outputs[k]));
-      var oh = 0;
-      if (keep) { var jj = oldOT.indexOf(k); if (jj >= 0) oh = Math.min(oldOH[jj], Math.max(2, 2 * r.outputs[k])); }
-      b.outHave.push(oh);
+    for (itemType in recipe.outputs) {
+      var outputCapacity = Math.max(2, 2 * recipe.outputs[itemType]);
+      building.outputTypes.push(itemType); building.outputAmounts.push(recipe.outputs[itemType]); building.outputCapacity.push(outputCapacity);
+      var outputKept = 0;
+      if (keepMatchingItems) { oldIndex = oldOutputTypes.indexOf(itemType); if (oldIndex >= 0) outputKept = Math.min(oldOutputCounts[oldIndex], outputCapacity); }
+      building.outputCounts.push(outputKept);
     }
-    b.crafting = false; b.craftT = 0;
+    building.crafting = false; building.craftTicks = 0;
   }
 
-  function clearState(b) {
-    b.item = null; b.age = 0; b.from = 0; b.rr = 0;
-    b.crafting = false; b.craftT = 0; b.timer = 0; b.pushed = false; b.misfed = false;
-    for (var i = 0; i < b.inHave.length; i++) b.inHave[i] = 0;
-    for (var j = 0; j < b.outHave.length; j++) b.outHave[j] = 0;
+  function clearState(building) {
+    building.item = null; building.age = 0; building.entryDir = 0; building.roundRobin = 0;
+    building.crafting = false; building.craftTicks = 0; building.mineTimer = 0; building.pushed = false; building.misfed = false;
+    building.reservedFor = null; building.reservedPass = -1;
+    for (var inputIndex = 0; inputIndex < building.inputCounts.length; inputIndex++) building.inputCounts[inputIndex] = 0;
+    for (var outputIndex = 0; outputIndex < building.outputCounts.length; outputIndex++) building.outputCounts[outputIndex] = 0;
   }
 
-  // does building N emit items in absolute direction d?
-  function outputsTo(N, d) {
-    if (N.kind === K_TERM) return false;
-    if (N.kind === K_SPLIT) return d === N.dir || d === ((N.dir + 3) & 3) || d === ((N.dir + 1) & 3);
-    return d === N.dir;
+  // does building `sender` emit items in absolute direction `direction`?
+  function outputsTo(sender, direction) {
+    if (sender.kind === KIND_TERMINAL) return false;
+    if (sender.kind === KIND_SPLITTER) return direction === sender.dir || direction === turn(sender.dir, 3) || direction === turn(sender.dir, 1);
+    return direction === sender.dir;
   }
-  function splitIndex(N, d) { return d === N.dir ? 0 : (d === ((N.dir + 3) & 3) ? 1 : 2); }
+  // splitter output slot for an absolute direction: 0 front, 1 left, 2 right (its round-robin order)
+  function splitterSlot(splitter, direction) { return direction === splitter.dir ? 0 : (direction === turn(splitter.dir, 3) ? 1 : 2); }
 
-  function acceptRelSides(b) {
-    switch (b.kind) {
-      case K_BELT: case K_MERGE: case K_MACH: return REL_PRIORITY;
-      case K_SPLIT: return REL_BACK_ONLY;
+  function acceptedSides(building) {
+    switch (building.kind) {
+      case KIND_BELT: case KIND_MERGER: case KIND_MACHINE: return SIDES_BACK_LEFT_RIGHT;
+      case KIND_SPLITTER: return SIDES_BACK_ONLY;
       default: return NO_SIDES;
     }
   }
 
   // feeder helpers -------------------------------------------------------------
-  // peek: type of the item feeder F could hand off this tick, or null. (Splitters push instead.)
-  function peek(F) {
-    var k = F.kind;
-    if (k === K_BELT || k === K_MERGE) return (F.item !== null && F.age >= F.T) ? F.item.type : null;
-    if (k === K_MACH || k === K_MINER) {
-      if (F.pushed) return null; // one item per tick, also when the transfer pass repeats (loops)
-      var oh = F.outHave;
-      for (var i = 0; i < oh.length; i++) if (oh[i] > 0) return F.outTypes[i];
+  // Type of the item `feeder` could hand off this tick, or null. Splitters push to their outputs; only a merger asks
+  // a splitter, so that a splitter-fed merger side counts as waiting in its round robin (see _mergerPull).
+  function readyItemType(feeder) {
+    var kind = feeder.kind;
+    if (kind === KIND_BELT || kind === KIND_MERGER || kind === KIND_SPLITTER) {
+      return (feeder.item !== null && feeder.age >= feeder.ticksPerItem) ? feeder.item.type : null;
+    }
+    if (kind === KIND_MACHINE || kind === KIND_MINER) {
+      if (feeder.pushed) return null; // one item per tick, also when the transfer pass repeats (loops)
+      var outputCounts = feeder.outputCounts;
+      for (var outputIndex = 0; outputIndex < outputCounts.length; outputIndex++) if (outputCounts[outputIndex] > 0) return feeder.outputTypes[outputIndex];
     }
     return null;
   }
 
   // Loop fallback for the processing order. Runs Tarjan's algorithm over the nodes that are not ordered yet,
   // following item flow from startNode. The first strongly connected component it completes is a loop with no
-  // unordered node downstream of it; the result is that loop's lowest-key node. Breaking the order there keeps
+  // unordered node downstream of it; the result is that loop's lowest-index node. Breaking the order there keeps
   // every line that leads INTO a loop downstream-first (it used to run upstream-first and lose a tick per item).
   function findLoopBreak(unorderedNodes, startNode) {
     var nodeIndex, nextVisitIndex = 0, visitStack = [], breakNode = null;
@@ -620,53 +638,60 @@ FF.engine = (function () {
     function visit(node) {
       node.visitIndex = node.lowLink = nextVisitIndex++;
       node.onVisitStack = true; visitStack.push(node);
-      for (var succIndex = 0; succIndex < node.succ.length && breakNode === null; succIndex++) {
-        var downstream = node.succ[succIndex];
-        if (downstream.done) continue;
-        if (downstream.visitIndex < 0) { visit(downstream); if (downstream.lowLink < node.lowLink) node.lowLink = downstream.lowLink; }
-        else if (downstream.onVisitStack && downstream.visitIndex < node.lowLink) node.lowLink = downstream.visitIndex;
+      for (var downstreamIndex = 0; downstreamIndex < node.downstream.length && breakNode === null; downstreamIndex++) {
+        var next = node.downstream[downstreamIndex];
+        if (next.ordered) continue;
+        if (next.visitIndex < 0) { visit(next); if (next.lowLink < node.lowLink) node.lowLink = next.lowLink; }
+        else if (next.onVisitStack && next.visitIndex < node.lowLink) node.lowLink = next.visitIndex;
       }
       if (breakNode === null && node.lowLink === node.visitIndex) {
         var member;
         do {
           member = visitStack.pop(); member.onVisitStack = false;
-          if (breakNode === null || member.key < breakNode.key) breakNode = member;
+          if (breakNode === null || member.cellIndex < breakNode.cellIndex) breakNode = member;
         } while (member !== node);
       }
     }
     visit(startNode);
     return breakNode;
   }
-  // remove the ready item from F without materialising an item object (receiver consumes it)
-  function takeDrop(F) {
-    if (F.kind === K_BELT || F.kind === K_MERGE) { F.item = null; F.age = 0; return; }
-    var oh = F.outHave;
-    for (var i = 0; i < oh.length; i++) if (oh[i] > 0) { oh[i]--; F.pushed = true; return; }
+
+  // Remove the ready item from `feeder` without making an item object (the receiver consumes it).
+  function discardReadyItem(feeder) {
+    if (feeder.kind === KIND_BELT || feeder.kind === KIND_MERGER) { feeder.item = null; feeder.age = 0; return; }
+    var outputCounts = feeder.outputCounts;
+    for (var outputIndex = 0; outputIndex < outputCounts.length; outputIndex++) {
+      if (outputCounts[outputIndex] > 0) { outputCounts[outputIndex]--; feeder.pushed = true; return; }
+    }
   }
 
   // ---------------------------------------------------------------- Sim
   function Sim(level, placements) {
     this.level = level;
-    var L = this.map = parseLevel(level);
-    this.w = L.w; this.h = L.h;
+    var parsed = this.map = parseLevel(level);
+    this.width = parsed.w; this.height = parsed.h;
     this.goal = level.goal || null;
-    this.grid = new Array(L.w * L.h);
-    for (var i = 0; i < this.grid.length; i++) this.grid[i] = null;
-    this.list = [];
+    this.grid = new Array(parsed.w * parsed.h);
+    for (var cellIndex = 0; cellIndex < this.grid.length; cellIndex++) this.grid[cellIndex] = null;
+    this.buildings = [];
     this.order = [];
-    this.term = null;
-    if (L.terminal) {
-      this.term = { kind: K_TERM, type: 'terminal', x: L.terminal.x, y: L.terminal.y, key: L.terminal.y * L.w + L.terminal.x,
-        dir: 0, pulls: [], pullDirs: [], succ: [], preds: [], deg: 0, done: false, outs: null };
-      this.grid[this.term.key] = this.term;
+    this.terminal = null;
+    if (parsed.terminal) {
+      this.terminal = { kind: KIND_TERMINAL, type: 'terminal', x: parsed.terminal.x, y: parsed.terminal.y,
+        cellIndex: parsed.terminal.y * parsed.w + parsed.terminal.x, dir: 0,
+        feeders: [], feederDirs: [], downstream: [], upstream: [], unorderedDownstreamCount: 0, ordered: false, splitterTargets: null,
+        passNumber: -1 };
+      this.grid[this.terminal.cellIndex] = this.terminal;
     }
-    this._nextId = 1;
+    this._nextItemId = 1;
+    this._passNumber = 0;
+    this._lateMergerPull = false;
     this.rejected = [];
     this._resetCounters();
-    var ps = placements || [];
-    for (var j = 0; j < ps.length; j++) {
-      var r = this._add(ps[j]);
-      if (!r.ok) this.rejected.push({ placement: ps[j], reason: r.reason });
+    var initialPlacements = placements || [];
+    for (var placementIndex = 0; placementIndex < initialPlacements.length; placementIndex++) {
+      var result = this._add(initialPlacements[placementIndex]);
+      if (!result.ok) this.rejected.push({ placement: initialPlacements[placementIndex], reason: result.reason });
     }
     this._rebuild();
   }
@@ -675,7 +700,7 @@ FF.engine = (function () {
     this.elapsed = 0;
     this.received = {};
     this.arrivals = {};
-    this.arrHead = {};
+    this.arrivalsHead = {};
     this.holdTicks = 0;
     this.success = false;
     this.successTick = null;
@@ -684,265 +709,340 @@ FF.engine = (function () {
     this.stats = { delivered: 0, crafted: 0, mined: 0 };
   };
 
-  Sim.prototype._plain = function () {
-    var out = new Array(this.list.length);
-    for (var i = 0; i < this.list.length; i++) {
-      var b = this.list[i];
-      var p = { type: b.type, x: b.x, y: b.y, dir: b.dir };
-      if (b.kind === K_MACH) p.recipe = b.recipe;
-      out[i] = p;
+  Sim.prototype._plainPlacements = function () {
+    var plain = new Array(this.buildings.length);
+    for (var buildingIndex = 0; buildingIndex < this.buildings.length; buildingIndex++) {
+      var building = this.buildings[buildingIndex];
+      var placement = { type: building.type, x: building.x, y: building.y, dir: building.dir };
+      if (building.kind === KIND_MACHINE) placement.recipe = building.recipe;
+      plain[buildingIndex] = placement;
     }
-    return out;
+    return plain;
   };
 
-  Object.defineProperty(Sim.prototype, 'placements', { get: function () { return this._plain(); } });
+  Object.defineProperty(Sim.prototype, 'placements', { get: function () { return this._plainPlacements(); } });
 
-  Sim.prototype._add = function (p) {
-    var chk = canPlace(this.level, this._plain(), p);
-    if (!chk.ok) return chk;
-    var q = { type: p.type, x: p.x, y: p.y, dir: p.dir == null ? 0 : p.dir, recipe: p.recipe };
-    if (BUILDINGS[q.type].recipes.length && q.recipe == null) q.recipe = defaultRecipe(this.level, q.type);
-    var b = makeBuilding(q, this.w);
-    if (b.kind === K_MINER) b.outTypes[0] = this.map.cells[q.y][q.x].ore;
-    this.list.push(b);
-    this.grid[b.key] = b;
+  Sim.prototype._add = function (placement) {
+    var check = canPlace(this.level, this._plainPlacements(), placement);
+    if (!check.ok) return check;
+    var normalized = { type: placement.type, x: placement.x, y: placement.y, dir: placement.dir == null ? 0 : placement.dir, recipe: placement.recipe };
+    if (BUILDINGS[normalized.type].recipes.length && normalized.recipe == null) normalized.recipe = defaultRecipe(this.level, normalized.type);
+    var building = makeBuilding(normalized, this.width);
+    if (building.kind === KIND_MINER) building.outputTypes[0] = this.map.cells[normalized.y][normalized.x].ore;
+    this.buildings.push(building);
+    this.grid[building.cellIndex] = building;
     return { ok: true };
   };
 
   Sim.prototype._at = function (x, y) {
-    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return null;
-    return this.grid[y * this.w + x];
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return null;
+    return this.grid[y * this.width + x];
   };
 
   // Recompute feeder lists, splitter outputs and the downstream-first processing order.
   Sim.prototype._rebuild = function () {
-    var nodes = this.list.slice();
-    if (this.term) nodes.push(this.term);
-    var i, j, n;
-    for (i = 0; i < nodes.length; i++) {
-      n = nodes[i];
-      n.pulls = []; n.pullDirs = []; n.succ = []; n.preds = []; n.done = false;
-      if (n.kind !== K_TERM) { n.slots = [null, null, null]; n.slotDirs = [0, 0, 0]; n.outs = [null, null, null]; n.outFrom = [0, 0, 0]; }
-    }
-    for (i = 0; i < nodes.length; i++) {
-      var R = nodes[i];
-      var absDirs;
-      if (R.kind === K_TERM) absDirs = [0, 1, 2, 3];
-      else {
-        var rel = acceptRelSides(R);
-        absDirs = [];
-        for (j = 0; j < rel.length; j++) absDirs.push((R.dir + rel[j]) & 3);
+    var nodes = this.buildings.slice();
+    if (this.terminal) nodes.push(this.terminal);
+    var nodeIndex, sideIndex, node;
+    for (nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+      node = nodes[nodeIndex];
+      node.feeders = []; node.feederDirs = []; node.downstream = []; node.upstream = []; node.ordered = false;
+      if (node.kind !== KIND_TERMINAL) {
+        node.mergerSlots = [null, null, null]; node.mergerSlotDirs = [0, 0, 0];
+        node.splitterTargets = [null, null, null]; node.splitterTargetEntryDirs = [0, 0, 0];
       }
-      for (j = 0; j < absDirs.length; j++) {
-        var a = absDirs[j];
-        var N = this._at(R.x + DX[a], R.y + DY[a]);
-        if (!N || N.kind === K_TERM) continue;
-        var od = (a + 2) & 3;
-        if (!outputsTo(N, od)) continue;
-        N.succ.push(R); R.preds.push(N);
-        if (N.kind === K_SPLIT) {
-          var si = splitIndex(N, od);
-          N.outs[si] = R; N.outFrom[si] = a;
+    }
+    for (nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+      var receiver = nodes[nodeIndex];
+      var entryDirs;
+      if (receiver.kind === KIND_TERMINAL) entryDirs = ALL_DIRECTIONS;
+      else {
+        var sides = acceptedSides(receiver);
+        entryDirs = [];
+        for (sideIndex = 0; sideIndex < sides.length; sideIndex++) entryDirs.push((receiver.dir + sides[sideIndex]) & 3);
+      }
+      for (sideIndex = 0; sideIndex < entryDirs.length; sideIndex++) {
+        var entryDir = entryDirs[sideIndex]; // absolute direction from the receiver towards the sender
+        var sender = this._at(receiver.x + DX[entryDir], receiver.y + DY[entryDir]);
+        if (!sender || sender.kind === KIND_TERMINAL) continue;
+        var sendDir = (entryDir + 2) & 3;
+        if (!outputsTo(sender, sendDir)) continue;
+        sender.downstream.push(receiver); receiver.upstream.push(sender);
+        if (sender.kind === KIND_SPLITTER) {
+          var targetSlot = splitterSlot(sender, sendDir);
+          sender.splitterTargets[targetSlot] = receiver; sender.splitterTargetEntryDirs[targetSlot] = entryDir;
+          // a merger also lists the splitter as one of its round-robin sides (see _mergerPull)
+          if (receiver.kind === KIND_MERGER) { receiver.mergerSlots[sideIndex] = sender; receiver.mergerSlotDirs[sideIndex] = entryDir; }
         } else {
-          R.pulls.push(N); R.pullDirs.push(a);
-          if (R.kind === K_MERGE) { R.slots[j] = N; R.slotDirs[j] = a; }
+          receiver.feeders.push(sender); receiver.feederDirs.push(entryDir);
+          if (receiver.kind === KIND_MERGER) { receiver.mergerSlots[sideIndex] = sender; receiver.mergerSlotDirs[sideIndex] = entryDir; }
         }
       }
     }
     // Kahn's algorithm from the sinks. When it runs dry, everything left is on a loop or upstream of one:
-    // break a loop that nothing else unordered depends on, at its lowest cell key (see findLoopBreak).
-    var sorted = nodes.slice().sort(function (p, q) { return p.key - q.key; });
-    for (i = 0; i < sorted.length; i++) {
-      sorted[i].deg = sorted[i].succ.length;
-      sorted[i].succ.sort(function (first, second) { return first.key - second.key; }); // order must not depend on placement order
+    // break a loop that nothing else unordered depends on, at its lowest cell index (see findLoopBreak).
+    var byCellIndex = function (first, second) { return first.cellIndex - second.cellIndex; };
+    var sorted = nodes.slice().sort(byCellIndex);
+    for (nodeIndex = 0; nodeIndex < sorted.length; nodeIndex++) {
+      sorted[nodeIndex].unorderedDownstreamCount = sorted[nodeIndex].downstream.length;
+      sorted[nodeIndex].downstream.sort(byCellIndex); // order must not depend on placement order
     }
-    var queue = [], qh = 0, order = [], scan = 0;
+    var queue = [], queueHead = 0, order = [], scanIndex = 0;
     this.hasLoop = false;
-    for (i = 0; i < sorted.length; i++) if (sorted[i].deg === 0) queue.push(sorted[i]);
+    for (nodeIndex = 0; nodeIndex < sorted.length; nodeIndex++) if (sorted[nodeIndex].unorderedDownstreamCount === 0) queue.push(sorted[nodeIndex]);
     while (order.length < sorted.length) {
-      if (qh >= queue.length) {
-        while (sorted[scan].done) scan++;
+      if (queueHead >= queue.length) {
+        while (sorted[scanIndex].ordered) scanIndex++;
         this.hasLoop = true;
-        queue.push(findLoopBreak(sorted, sorted[scan]));
+        queue.push(findLoopBreak(sorted, sorted[scanIndex]));
       }
-      n = queue[qh++];
-      if (n.done) continue;
-      n.done = true;
-      order.push(n);
-      for (j = 0; j < n.preds.length; j++) {
-        var P = n.preds[j];
-        if (!P.done && --P.deg === 0) queue.push(P);
+      node = queue[queueHead++];
+      if (node.ordered) continue;
+      node.ordered = true;
+      order.push(node);
+      for (var upstreamIndex = 0; upstreamIndex < node.upstream.length; upstreamIndex++) {
+        var upstreamSender = node.upstream[upstreamIndex];
+        if (!upstreamSender.ordered && --upstreamSender.unorderedDownstreamCount === 0) queue.push(upstreamSender);
       }
     }
     this.order = order;
   };
 
-  Sim.prototype._record = function (type) {
-    this.received[type] = (this.received[type] || 0) + 1;
-    var arr = this.arrivals[type];
-    if (!arr) { arr = this.arrivals[type] = []; this.arrHead[type] = 0; }
-    arr.push(this.elapsed);
+  Sim.prototype._record = function (itemType) {
+    this.received[itemType] = (this.received[itemType] || 0) + 1;
+    var arrivalTicks = this.arrivals[itemType];
+    if (!arrivalTicks) { arrivalTicks = this.arrivals[itemType] = []; this.arrivalsHead[itemType] = 0; }
+    arrivalTicks.push(this.elapsed);
     this.stats.delivered++;
   };
 
-  Sim.prototype._rate = function (type) {
-    var arr = this.arrivals[type];
-    if (!arr) return 0;
-    var head = this.arrHead[type], lim = this.elapsed - TICKS_PER_MIN;
-    while (head < arr.length && arr[head] <= lim) head++;
-    if (head > 4096 && head * 2 > arr.length) { arr.splice(0, head); head = 0; }
-    this.arrHead[type] = head;
-    var cnt = arr.length - head;
-    if (this.elapsed >= TICKS_PER_MIN) return cnt;
-    if (this.elapsed >= EXTRAPOLATE_MIN) return cnt * TICKS_PER_MIN / this.elapsed;
+  Sim.prototype._rate = function (itemType) {
+    var arrivalTicks = this.arrivals[itemType];
+    if (!arrivalTicks) return 0;
+    var head = this.arrivalsHead[itemType], windowStart = this.elapsed - TICKS_PER_MIN;
+    while (head < arrivalTicks.length && arrivalTicks[head] <= windowStart) head++;
+    if (head > 4096 && head * 2 > arrivalTicks.length) { arrivalTicks.splice(0, head); head = 0; }
+    this.arrivalsHead[itemType] = head;
+    var count = arrivalTicks.length - head;
+    if (this.elapsed >= TICKS_PER_MIN) return count;
+    if (this.elapsed >= EXTRAPOLATE_MIN) return count * TICKS_PER_MIN / this.elapsed;
     return 0;
   };
 
-  // Hand an item object to R (used by splitter pushes). Returns true if accepted.
-  Sim.prototype._accept = function (R, item, fromAbs) {
-    switch (R.kind) {
-      case K_BELT: case K_SPLIT: case K_MERGE:
-        if (R.item !== null) return false;
-        R.item = item; R.age = 0; R.from = fromAbs; return true;
-      case K_MACH: {
-        var idx = R.inTypes.indexOf(item.type);
-        if (idx < 0) return false; // the pushing splitter flags misfed if the item ends up stuck
-        if (R.inHave[idx] >= R.inCap[idx]) return false;
-        R.inHave[idx]++; return true;
+  // Hand an item object from splitter `sender` to `receiver`. Returns true if accepted.
+  Sim.prototype._accept = function (receiver, item, entryDir, sender) {
+    switch (receiver.kind) {
+      case KIND_BELT: case KIND_SPLITTER:
+        if (receiver.item !== null) return false;
+        receiver.item = item; receiver.age = 0; receiver.entryDir = entryDir; return true;
+      case KIND_MERGER: {
+        if (receiver.item !== null) return false;
+        // a merger that kept this pass's turn for one splitter takes nothing from another
+        if (receiver.reservedPass === this._passNumber && receiver.reservedFor !== sender) return false;
+        receiver.item = item; receiver.age = 0; receiver.entryDir = entryDir;
+        receiver.reservedFor = null;
+        var senderSlot = receiver.mergerSlots.indexOf(sender);
+        if (senderSlot >= 0) receiver.roundRobin = (senderSlot + 1) % 3;
+        return true;
       }
-      case K_TERM:
+      case KIND_MACHINE: {
+        var inputIndex = receiver.inputTypes.indexOf(item.type);
+        if (inputIndex < 0) return false; // the pushing splitter flags misfed if the item ends up stuck
+        if (receiver.inputCounts[inputIndex] >= receiver.inputCapacity[inputIndex]) return false;
+        receiver.inputCounts[inputIndex]++; return true;
+      }
+      case KIND_TERMINAL:
         this._record(item.type); return true;
     }
     return false;
   };
 
-  Sim.prototype._takeItem = function (F) {
-    if (F.kind === K_BELT || F.kind === K_MERGE) { var it = F.item; F.item = null; F.age = 0; return it; }
-    var oh = F.outHave;
-    for (var i = 0; i < oh.length; i++) if (oh[i] > 0) {
-      oh[i]--; F.pushed = true;
-      return { id: this._nextId++, type: F.outTypes[i] };
+  // Take the ready item from `feeder` as an item object (keeps its id; machines and miners mint a new one).
+  Sim.prototype._takeItem = function (feeder) {
+    if (feeder.kind === KIND_BELT || feeder.kind === KIND_MERGER) { var item = feeder.item; feeder.item = null; feeder.age = 0; return item; }
+    var outputCounts = feeder.outputCounts;
+    for (var outputIndex = 0; outputIndex < outputCounts.length; outputIndex++) if (outputCounts[outputIndex] > 0) {
+      outputCounts[outputIndex]--; feeder.pushed = true;
+      return { id: this._nextItemId++, type: feeder.outputTypes[outputIndex] };
     }
     return null;
   };
 
-  Sim.prototype._step = function () {
-    this.elapsed++;
-    var list = this.list, order = this.order, b, i, j, k, F, t;
-    // Pass A: advance internal timers (order-independent).
-    for (i = 0; i < list.length; i++) {
-      b = list[i];
-      switch (b.kind) {
-        case K_BELT: case K_SPLIT: case K_MERGE:
-          if (b.item !== null && b.age < b.T) b.age++;
-          break;
-        case K_MINER:
-          b.pushed = false;
-          if (b.timer < MINER_TICKS) b.timer++;
-          if (b.timer >= MINER_TICKS && b.outHave[0] < b.outCap[0]) { b.outHave[0]++; b.timer = 0; this.stats.mined++; }
-          break;
-        case K_MACH: {
-          b.pushed = false; b.misfed = false;
-          if (b.crafting) {
-            b.craftT++;
-            if (b.craftT >= b.rec.ticks) {
-              for (j = 0; j < b.outHave.length; j++) b.outHave[j] += b.outAmt[j];
-              b.crafting = false; b.craftT = 0; this.stats.crafted++;
-            }
-          }
-          if (!b.crafting) {
-            var can = true;
-            for (j = 0; j < b.inHave.length; j++) if (b.inHave[j] < b.inNeed[j]) { can = false; break; }
-            if (can) for (j = 0; j < b.outHave.length; j++) if (b.outHave[j] + b.outAmt[j] > b.outCap[j]) { can = false; break; }
-            if (can) {
-              for (j = 0; j < b.inHave.length; j++) b.inHave[j] -= b.inNeed[j];
-              b.crafting = true; b.craftT = 0;
-            }
-          }
-          break;
+  // A merger's pull: round robin over its sides, starting after the side it last took from, picking the first side
+  // with an item waiting. A splitter counts as waiting when it holds a ready item. If that splitter has not acted
+  // yet in this pass, the merger keeps the turn for it and stays empty: the splitter pushes here if its own round
+  // robin picks this merger, and otherwise hands the turn back (see _releaseMergerTurns). Returns items moved.
+  Sim.prototype._mergerPull = function (merger) {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var slot = (merger.roundRobin + attempt) % 3, feeder = merger.mergerSlots[slot];
+      if (feeder === null || readyItemType(feeder) === null) continue;
+      if (feeder.kind === KIND_SPLITTER) {
+        if (feeder.passNumber !== this._passNumber) {
+          merger.reservedFor = feeder; merger.reservedPass = this._passNumber;
+          return 0;
         }
+        // the splitter already acted this pass and its item is still waiting: take it, as if it had pushed here
+        merger.item = feeder.item; feeder.item = null; feeder.age = 0;
+        feeder.roundRobin = (feeder.splitterTargets.indexOf(merger) + 1) % 3;
+      } else merger.item = this._takeItem(feeder);
+      merger.age = 0; merger.entryDir = merger.mergerSlotDirs[slot]; merger.roundRobin = (slot + 1) % 3;
+      return 1;
+    }
+    return 0;
+  };
+
+  // After `splitter` has pushed (or failed to): every merger output still holding its turn for this splitter
+  // gets the turn back and pulls from its next side right away. The feeder it takes from may already have acted
+  // this pass, so a late pull asks for one more transfer pass to refill that feeder in the same tick.
+  Sim.prototype._releaseMergerTurns = function (splitter) {
+    var moved = 0;
+    for (var outputSlot = 0; outputSlot < 3; outputSlot++) {
+      var target = splitter.splitterTargets[outputSlot];
+      if (target === null || target.kind !== KIND_MERGER) continue;
+      if (target.reservedFor !== splitter || target.reservedPass !== this._passNumber) continue;
+      target.reservedFor = null; target.reservedPass = -1;
+      if (target.item === null) {
+        var pulled = this._mergerPull(target);
+        if (pulled) { moved += pulled; this._lateMergerPull = true; }
       }
     }
+    return moved;
+  };
+
+  // Pass A: advance one building's own timers (order-independent).
+  Sim.prototype._advanceTimers = function (building) {
+    var index;
+    switch (building.kind) {
+      case KIND_BELT: case KIND_SPLITTER: case KIND_MERGER:
+        if (building.item !== null && building.age < building.ticksPerItem) building.age++;
+        break;
+      case KIND_MINER:
+        building.pushed = false;
+        if (building.mineTimer < MINER_TICKS) building.mineTimer++;
+        if (building.mineTimer >= MINER_TICKS && building.outputCounts[0] < building.outputCapacity[0]) {
+          building.outputCounts[0]++; building.mineTimer = 0; this.stats.mined++;
+        }
+        break;
+      case KIND_MACHINE: {
+        building.pushed = false; building.misfed = false;
+        if (building.crafting) {
+          building.craftTicks++;
+          if (building.craftTicks >= building.recipeDef.ticks) {
+            for (index = 0; index < building.outputCounts.length; index++) building.outputCounts[index] += building.outputAmounts[index];
+            building.crafting = false; building.craftTicks = 0; this.stats.crafted++;
+          }
+        }
+        if (!building.crafting) {
+          var canStart = true;
+          for (index = 0; index < building.inputCounts.length; index++) {
+            if (building.inputCounts[index] < building.inputNeeded[index]) { canStart = false; break; }
+          }
+          if (canStart) for (index = 0; index < building.outputCounts.length; index++) {
+            if (building.outputCounts[index] + building.outputAmounts[index] > building.outputCapacity[index]) { canStart = false; break; }
+          }
+          if (canStart) {
+            for (index = 0; index < building.inputCounts.length; index++) building.inputCounts[index] -= building.inputNeeded[index];
+            building.crafting = true; building.craftTicks = 0;
+          }
+        }
+        break;
+      }
+    }
+  };
+
+  // Pass B for one building: pull from feeders (or, for a splitter, push to its outputs first).
+  // Returns how many items moved.
+  Sim.prototype._transfer = function (building) {
+    var feeders = building.feeders, feederIndex, attempt, feeder, itemType, moved = 0;
+    building.passNumber = this._passNumber;
+    switch (building.kind) {
+      case KIND_BELT:
+        if (building.item === null) {
+          for (feederIndex = 0; feederIndex < feeders.length; feederIndex++) {
+            feeder = feeders[feederIndex];
+            if (readyItemType(feeder) !== null) {
+              building.item = this._takeItem(feeder); building.age = 0; building.entryDir = building.feederDirs[feederIndex];
+              moved++; break;
+            }
+          }
+        }
+        break;
+      case KIND_MERGER:
+        building.reservedFor = null; building.reservedPass = -1;
+        if (building.item === null) moved += this._mergerPull(building);
+        break;
+      case KIND_SPLITTER:
+        if (building.item !== null && building.age >= building.ticksPerItem) {
+          for (attempt = 0; attempt < 3; attempt++) {
+            var targetSlot = (building.roundRobin + attempt) % 3, target = building.splitterTargets[targetSlot];
+            if (target !== null && this._accept(target, building.item, building.splitterTargetEntryDirs[targetSlot], building)) {
+              building.item = null; building.age = 0; building.roundRobin = (targetSlot + 1) % 3; moved++; break;
+            }
+          }
+          // still here: the item is stuck. Only now is a machine that cannot use it "misfed".
+          if (building.item !== null) {
+            for (var outputSlot = 0; outputSlot < 3; outputSlot++) {
+              var stuckAt = building.splitterTargets[outputSlot];
+              if (stuckAt !== null && stuckAt.kind === KIND_MACHINE && stuckAt.inputTypes.indexOf(building.item.type) < 0) stuckAt.misfed = true;
+            }
+          }
+        }
+        moved += this._releaseMergerTurns(building);
+        if (building.item === null && feeders.length) {
+          feeder = feeders[0];
+          if (readyItemType(feeder) !== null) {
+            building.item = this._takeItem(feeder); building.age = 0; building.entryDir = building.feederDirs[0]; moved++;
+          }
+        }
+        break;
+      case KIND_MACHINE:
+        for (feederIndex = 0; feederIndex < feeders.length; feederIndex++) {
+          feeder = feeders[feederIndex];
+          itemType = readyItemType(feeder);
+          if (itemType === null) continue;
+          var inputIndex = building.inputTypes.indexOf(itemType);
+          if (inputIndex < 0) { building.misfed = true; continue; }
+          if (building.inputCounts[inputIndex] < building.inputCapacity[inputIndex]) {
+            discardReadyItem(feeder); building.inputCounts[inputIndex]++; moved++;
+          }
+        }
+        break;
+      case KIND_TERMINAL:
+        for (feederIndex = 0; feederIndex < feeders.length; feederIndex++) {
+          feeder = feeders[feederIndex];
+          itemType = readyItemType(feeder);
+          if (itemType !== null) { discardReadyItem(feeder); this._record(itemType); moved++; }
+        }
+        break;
+    }
+    return moved;
+  };
+
+  Sim.prototype._step = function () {
+    this.elapsed++;
+    var buildings = this.buildings, order = this.order, buildingIndex;
+    for (buildingIndex = 0; buildingIndex < buildings.length; buildingIndex++) this._advanceTimers(buildings[buildingIndex]);
     // Pass B: transfers, downstream-first. Receivers pull from feeders (fixed priority / round robin);
     // splitters push to their outputs (already processed this tick).
     // Inside a loop no order is downstream-first for every cell: the cell where the order was broken is emptied
     // after its own turn. So with a loop on the plot the pass repeats until nothing moves, which lets that cell
     // (and the cells behind it) fill the hole in the same tick. Items received this tick are not ready to move
     // and machines/miners give one item per tick, so the repeats only close gaps.
+    // A merger that got its turn back from a splitter late in the pass (see _releaseMergerTurns) asks for a repeat too.
     var movedCount, extraPasses = 0;
     do {
-    movedCount = 0;
-    for (i = 0; i < order.length; i++) {
-      b = order[i];
-      var pl = b.pulls;
-      switch (b.kind) {
-        case K_BELT:
-          if (b.item === null) {
-            for (j = 0; j < pl.length; j++) {
-              F = pl[j];
-              if (peek(F) !== null) { b.item = this._takeItem(F); b.age = 0; b.from = b.pullDirs[j]; movedCount++; break; }
-            }
-          }
-          break;
-        case K_MERGE:
-          if (b.item === null) {
-            for (k = 0; k < 3; k++) {
-              var s = (b.rr + k) % 3;
-              F = b.slots[s];
-              if (F !== null && peek(F) !== null) {
-                b.item = this._takeItem(F); b.age = 0; b.from = b.slotDirs[s]; b.rr = (s + 1) % 3; movedCount++; break;
-              }
-            }
-          }
-          break;
-        case K_SPLIT:
-          if (b.item !== null && b.age >= b.T) {
-            for (k = 0; k < 3; k++) {
-              var so = (b.rr + k) % 3, R = b.outs[so];
-              if (R !== null && this._accept(R, b.item, b.outFrom[so])) {
-                b.item = null; b.age = 0; b.rr = (so + 1) % 3; movedCount++; break;
-              }
-            }
-            // still here: the item is stuck. Only now is a machine that cannot use it "misfed".
-            if (b.item !== null) {
-              for (var outputIndex = 0; outputIndex < 3; outputIndex++) {
-                var stuckAt = b.outs[outputIndex];
-                if (stuckAt !== null && stuckAt.kind === K_MACH && stuckAt.inTypes.indexOf(b.item.type) < 0) stuckAt.misfed = true;
-              }
-            }
-          }
-          if (b.item === null && pl.length) {
-            F = pl[0];
-            if (peek(F) !== null) { b.item = this._takeItem(F); b.age = 0; b.from = b.pullDirs[0]; movedCount++; }
-          }
-          break;
-        case K_MACH:
-          for (j = 0; j < pl.length; j++) {
-            F = pl[j];
-            t = peek(F);
-            if (t === null) continue;
-            var idx = b.inTypes.indexOf(t);
-            if (idx < 0) { b.misfed = true; continue; }
-            if (b.inHave[idx] < b.inCap[idx]) { takeDrop(F); b.inHave[idx]++; movedCount++; }
-          }
-          break;
-        case K_TERM:
-          for (j = 0; j < pl.length; j++) {
-            F = pl[j];
-            t = peek(F);
-            if (t !== null) { takeDrop(F); this._record(t); movedCount++; }
-          }
-          break;
-      }
-    }
-    } while (this.hasLoop && movedCount > 0 && extraPasses++ < MAX_EXTRA_PASSES);
+      this._passNumber++;
+      this._lateMergerPull = false;
+      movedCount = 0;
+      for (buildingIndex = 0; buildingIndex < order.length; buildingIndex++) movedCount += this._transfer(order[buildingIndex]);
+    } while ((this.hasLoop || this._lateMergerPull) && movedCount > 0 && extraPasses++ < MAX_EXTRA_PASSES);
     // Goal / hold logic.
-    var g = this.goal;
-    if (g) {
-      var rate = this.goalRate = this._rate(g.item);
+    var goal = this.goal;
+    if (goal) {
+      var rate = this.goalRate = this._rate(goal.item);
       if (this.elapsed >= TICKS_PER_MIN) {
         if (rate > this.maxRate) this.maxRate = rate;
-        if (rate >= g.rate) {
+        if (rate >= goal.rate) {
           if (this.holdTicks < HOLD_TICKS) this.holdTicks++;
           if (this.holdTicks >= HOLD_TICKS && !this.success) { this.success = true; this.successTick = this.elapsed; }
         } else this.holdTicks = 0;
@@ -950,150 +1050,171 @@ FF.engine = (function () {
     }
   };
 
-  Sim.prototype.tick = function (n) {
-    n = n == null ? 1 : n | 0;
-    for (var i = 0; i < n; i++) this._step();
+  Sim.prototype.tick = function (count) {
+    count = count == null ? 1 : count | 0;
+    for (var step = 0; step < count; step++) this._step();
   };
 
   // ---- live editing
-  Sim.prototype.place = function (p) {
-    var r = this._add(p);
-    if (r.ok) this._rebuild();
-    return r;
+  Sim.prototype.place = function (placement) {
+    var result = this._add(placement);
+    if (result.ok) this._rebuild();
+    return result;
   };
 
   Sim.prototype.remove = function (x, y) {
-    var b = this._at(x, y);
-    if (!b || b.kind === K_TERM) return false;
-    this.list.splice(this.list.indexOf(b), 1);
-    this.grid[b.key] = null;
+    var building = this._at(x, y);
+    if (!building || building.kind === KIND_TERMINAL) return false;
+    this.buildings.splice(this.buildings.indexOf(building), 1);
+    this.grid[building.cellIndex] = null;
     this._rebuild();
     return true;
   };
 
   Sim.prototype.rotate = function (x, y, delta) {
-    var b = this._at(x, y);
-    if (!b || b.kind === K_TERM) return false;
-    var d = delta == null ? 1 : delta | 0;
-    b.dir = (((b.dir + d) % 4) + 4) % 4;
-    b.from = (((b.from + d) % 4) + 4) % 4; // the entry side turns with the belt, so it can never be the new front
+    var building = this._at(x, y);
+    if (!building || building.kind === KIND_TERMINAL) return false;
+    var steps = delta == null ? 1 : delta | 0;
+    building.dir = turn(building.dir, steps);
+    building.entryDir = turn(building.entryDir, steps); // the entry side turns with the belt, so it can never be the new front
     this._rebuild();
     return true;
   };
 
   Sim.prototype.setRecipe = function (x, y, recipeId) {
-    var b = this._at(x, y);
-    if (!b || b.kind !== K_MACH) return no('No machine here');
-    var r = RECIPES[recipeId];
-    if (!r || r.building !== b.type) return no('That recipe does not fit this building');
-    if (this.level.recipes && this.level.recipes.indexOf(recipeId) < 0) return no('Recipe locked in this contract');
-    if (b.recipe !== recipeId) setRecipeState(b, recipeId, true);
+    var building = this._at(x, y);
+    if (!building || building.kind !== KIND_MACHINE) return refuse('No machine here');
+    var recipe = RECIPES[recipeId];
+    if (!recipe || recipe.building !== building.type) return refuse('That recipe does not fit this building');
+    if (this.level.recipes && this.level.recipes.indexOf(recipeId) < 0) return refuse('Recipe locked in this contract');
+    if (building.recipe !== recipeId) setRecipeState(building, recipeId, true);
     return { ok: true };
   };
 
   Sim.prototype.reset = function () {
-    for (var i = 0; i < this.list.length; i++) clearState(this.list[i]);
+    for (var buildingIndex = 0; buildingIndex < this.buildings.length; buildingIndex++) clearState(this.buildings[buildingIndex]);
     this._resetCounters();
   };
 
   // ---- queries
-  function machineStatus(b) {
-    if (b.crafting) return 'working';
-    var j, haveAll = true, any = false, outRoom = true, outAny = false;
-    for (j = 0; j < b.inHave.length; j++) { if (b.inHave[j] < b.inNeed[j]) haveAll = false; if (b.inHave[j] > 0) any = true; }
-    for (j = 0; j < b.outHave.length; j++) { if (b.outHave[j] + b.outAmt[j] > b.outCap[j]) outRoom = false; if (b.outHave[j] > 0) outAny = true; }
-    if (haveAll && !outRoom) return 'blocked';
-    if (b.misfed) return 'misfed';
-    if (any) return 'starved';
-    if (outAny && !b.pushed) return 'blocked';
+  function machineStatus(building) {
+    if (building.crafting) return 'working';
+    var index, hasAllInputs = true, hasAnyInput = false, outputHasRoom = true, hasAnyOutput = false;
+    for (index = 0; index < building.inputCounts.length; index++) {
+      if (building.inputCounts[index] < building.inputNeeded[index]) hasAllInputs = false;
+      if (building.inputCounts[index] > 0) hasAnyInput = true;
+    }
+    for (index = 0; index < building.outputCounts.length; index++) {
+      if (building.outputCounts[index] + building.outputAmounts[index] > building.outputCapacity[index]) outputHasRoom = false;
+      if (building.outputCounts[index] > 0) hasAnyOutput = true;
+    }
+    if (hasAllInputs && !outputHasRoom) return 'blocked';
+    if (building.misfed) return 'misfed';
+    if (hasAnyInput) return 'starved';
+    if (hasAnyOutput && !building.pushed) return 'blocked';
     return 'idle';
   }
 
-  function statusOf(b) {
-    switch (b.kind) {
-      case K_BELT: case K_SPLIT: case K_MERGE:
-        return b.item === null ? 'empty' : (b.age >= b.T ? 'stalled' : 'moving');
-      case K_MINER:
-        return (b.outHave[0] >= b.outCap[0] && !b.pushed) ? 'blocked' : 'working';
-      case K_MACH:
-        return machineStatus(b);
+  function statusOf(building) {
+    switch (building.kind) {
+      case KIND_BELT: case KIND_SPLITTER: case KIND_MERGER:
+        return building.item === null ? 'empty' : (building.age >= building.ticksPerItem ? 'stalled' : 'moving');
+      case KIND_MINER:
+        // Blocked only when mining actually stopped this tick: the timer is full because the ore had nowhere to go
+        // (when it deposits, the timer restarts at 0). A full buffer alone is not enough. In a balanced chain a
+        // buffer that filled up once never drains, yet the miner still delivers 30/min.
+        return building.mineTimer >= MINER_TICKS ? 'blocked' : 'working';
+      case KIND_MACHINE:
+        // No such exception needed for machines: a machine cannot start a craft without output room, so a full output
+        // buffer really stops it, and a backlog behind it drains instead of lingering.
+        return machineStatus(building);
     }
     return 'idle';
   }
 
   Sim.prototype.getBuildings = function () {
-    var out = [];
-    var ore = null;
-    for (var i = 0; i < this.list.length; i++) {
-      var b = this.list[i], j;
-      var o = { type: b.type, x: b.x, y: b.y, dir: b.dir, recipe: b.recipe, status: statusOf(b), progress: 0,
-        inputs: {}, output: {}, inputCap: {}, outputCap: {} };
-      switch (b.kind) {
-        case K_BELT: case K_SPLIT: case K_MERGE:
-          o.progress = b.item ? b.age / b.T : 0;
-          o.item = b.item ? b.item.type : null;
+    var snapshots = [];
+    for (var buildingIndex = 0; buildingIndex < this.buildings.length; buildingIndex++) {
+      var building = this.buildings[buildingIndex], index;
+      var snapshot = { type: building.type, x: building.x, y: building.y, dir: building.dir, recipe: building.recipe,
+        status: statusOf(building), progress: 0, inputs: {}, output: {}, inputCap: {}, outputCap: {} };
+      switch (building.kind) {
+        case KIND_BELT: case KIND_SPLITTER: case KIND_MERGER:
+          snapshot.progress = building.item ? building.age / building.ticksPerItem : 0;
+          snapshot.item = building.item ? building.item.type : null;
           break;
-        case K_MINER:
-          ore = this.map.cells[b.y][b.x].ore;
-          o.ore = ore;
-          o.progress = b.timer / MINER_TICKS;
-          o.output[ore] = b.outHave[0]; o.outputCap[ore] = b.outCap[0];
-          o.ratePerMin = TICKS_PER_MIN / MINER_TICKS;
+        case KIND_MINER: {
+          var ore = this.map.cells[building.y][building.x].ore;
+          snapshot.ore = ore;
+          snapshot.progress = building.mineTimer / MINER_TICKS;
+          snapshot.output[ore] = building.outputCounts[0]; snapshot.outputCap[ore] = building.outputCapacity[0];
+          snapshot.ratePerMin = TICKS_PER_MIN / MINER_TICKS;
           break;
-        case K_MACH:
-          o.progress = b.crafting ? b.craftT / b.rec.ticks : 0;
-          for (j = 0; j < b.inTypes.length; j++) { o.inputs[b.inTypes[j]] = b.inHave[j]; o.inputCap[b.inTypes[j]] = b.inCap[j]; }
-          for (j = 0; j < b.outTypes.length; j++) { o.output[b.outTypes[j]] = b.outHave[j]; o.outputCap[b.outTypes[j]] = b.outCap[j]; }
-          o.ratePerMin = b.outAmt[0] * TICKS_PER_MIN / b.rec.ticks;
+        }
+        case KIND_MACHINE:
+          snapshot.progress = building.crafting ? building.craftTicks / building.recipeDef.ticks : 0;
+          for (index = 0; index < building.inputTypes.length; index++) {
+            snapshot.inputs[building.inputTypes[index]] = building.inputCounts[index];
+            snapshot.inputCap[building.inputTypes[index]] = building.inputCapacity[index];
+          }
+          for (index = 0; index < building.outputTypes.length; index++) {
+            snapshot.output[building.outputTypes[index]] = building.outputCounts[index];
+            snapshot.outputCap[building.outputTypes[index]] = building.outputCapacity[index];
+          }
+          snapshot.ratePerMin = building.outputAmounts[0] * TICKS_PER_MIN / building.recipeDef.ticks;
           break;
       }
-      out.push(o);
+      snapshots.push(snapshot);
     }
-    return out;
+    return snapshots;
   };
 
-  // frac (optional, 0..1): fraction of the next tick already elapsed, for smooth rendering between ticks.
-  Sim.prototype.getItems = function (frac) {
-    frac = frac > 0 ? (frac < 1 ? frac : 1) : 0;
-    var out = [];
-    for (var i = 0; i < this.list.length; i++) {
-      var b = this.list[i];
-      if (b.item === null || (b.kind !== K_BELT && b.kind !== K_SPLIT && b.kind !== K_MERGE)) continue;
-      var cx = b.x + 0.5, cy = b.y + 0.5, x = cx, y = cy, p;
-      if (b.kind === K_BELT) {
-        p = b.age >= b.T ? 1 : Math.min(1, (b.age + frac) / b.T);
-        if (p < 0.5) {
-          var f = p * 2, ex = cx + 0.5 * DX[b.from], ey = cy + 0.5 * DY[b.from];
-          x = ex + (cx - ex) * f; y = ey + (cy - ey) * f;
+  // tickFraction (optional, 0..1): fraction of the next tick already elapsed, for smooth rendering between ticks.
+  Sim.prototype.getItems = function (tickFraction) {
+    tickFraction = tickFraction > 0 ? (tickFraction < 1 ? tickFraction : 1) : 0;
+    var items = [];
+    for (var buildingIndex = 0; buildingIndex < this.buildings.length; buildingIndex++) {
+      var building = this.buildings[buildingIndex];
+      if (building.item === null || !isLogistic(building)) continue;
+      var centreX = building.x + 0.5, centreY = building.y + 0.5, x = centreX, y = centreY, progress;
+      var stalled = building.age >= building.ticksPerItem;
+      if (building.kind === KIND_BELT) {
+        progress = stalled ? 1 : Math.min(1, (building.age + tickFraction) / building.ticksPerItem);
+        if (progress < 0.5) {
+          // entry edge -> centre
+          var entryShare = progress * 2;
+          var entryX = centreX + 0.5 * DX[building.entryDir], entryY = centreY + 0.5 * DY[building.entryDir];
+          x = entryX + (centreX - entryX) * entryShare; y = entryY + (centreY - entryY) * entryShare;
         } else {
-          var g = (p - 0.5) * 2;
-          x = cx + 0.5 * DX[b.dir] * g; y = cy + 0.5 * DY[b.dir] * g;
+          // centre -> front edge
+          var exitShare = (progress - 0.5) * 2;
+          x = centreX + 0.5 * DX[building.dir] * exitShare; y = centreY + 0.5 * DY[building.dir] * exitShare;
         }
-      } else p = b.age >= b.T ? 1 : (b.age + frac) / b.T;
-      out.push({ id: b.item.id, type: b.item.type, x: x, y: y, progress: p, stalled: b.age >= b.T });
+      } else progress = stalled ? 1 : (building.age + tickFraction) / building.ticksPerItem;
+      items.push({ id: building.item.id, type: building.item.type, x: x, y: y, progress: progress, stalled: stalled });
     }
-    return out;
+    return items;
   };
 
   Sim.prototype.getTerminal = function () {
-    if (!this.term) return null;
-    var rate = {}, rec = {};
-    for (var k in this.received) { rec[k] = this.received[k]; rate[k] = this._rate(k); }
-    return { x: this.term.x, y: this.term.y, received: rec, rate: rate };
+    if (!this.terminal) return null;
+    var rates = {}, received = {};
+    for (var itemType in this.received) { received[itemType] = this.received[itemType]; rates[itemType] = this._rate(itemType); }
+    return { x: this.terminal.x, y: this.terminal.y, received: received, rate: rates };
   };
 
   Sim.prototype.getGoalProgress = function () {
-    var g = this.goal;
+    var goal = this.goal;
     return {
-      item: g ? g.item : null, target: g ? g.rate : 0,
-      rate: g ? this._rate(g.item) : 0,
+      item: goal ? goal.item : null, target: goal ? goal.rate : 0,
+      rate: goal ? this._rate(goal.item) : 0,
       holdTicks: this.holdTicks, success: this.success, successTick: this.successTick,
     };
   };
 
   Sim.prototype.getPower = function () {
     var used = 0;
-    for (var i = 0; i < this.list.length; i++) used += this.list[i].def.power;
+    for (var buildingIndex = 0; buildingIndex < this.buildings.length; buildingIndex++) used += this.buildings[buildingIndex].definition.power;
     var cap = this.level.powerCap;
     return { used: used, cap: cap == null ? null : cap };
   };
@@ -1104,16 +1225,19 @@ FF.engine = (function () {
 
   function createSim(level, placements) { return new Sim(level, placements); }
 
-  function evaluate(level, placements, opts) {
-    var maxTicks = (opts && opts.maxTicks) || 6000;
+  function evaluate(level, placements, options) {
+    var maxTicks = (options && options.maxTicks) || 6000;
     var sim = new Sim(level, placements);
     while (sim.elapsed < maxTicks && !sim.success) sim._step();
-    var gp = sim.getGoalProgress();
-    var bs = sim.getBuildings();
+    var goalProgress = sim.getGoalProgress();
+    var snapshots = sim.getBuildings();
     var statuses = [];
-    for (var i = 0; i < bs.length; i++) statuses.push({ type: bs[i].type, x: bs[i].x, y: bs[i].y, status: bs[i].status });
+    for (var snapshotIndex = 0; snapshotIndex < snapshots.length; snapshotIndex++) {
+      var snapshot = snapshots[snapshotIndex];
+      statuses.push({ type: snapshot.type, x: snapshot.x, y: snapshot.y, status: snapshot.status });
+    }
     return {
-      success: sim.success, successTick: sim.successTick, rate: gp.rate, maxRate: sim.maxRate,
+      success: sim.success, successTick: sim.successTick, rate: goalProgress.rate, maxRate: sim.maxRate,
       score: score(sim.placements), statuses: statuses, rejected: sim.rejected, ticks: sim.elapsed,
     };
   }
@@ -1364,20 +1488,19 @@ FF.levels = [
     recipes: ['ferrite_bar', 'rod', 'bolts'],
     goal: { item: 'bolts', rate: 100 },
     powerCap: null,
-    par: { cells: 12, cost: 46, power: 29 },
+    par: { cells: 11, cost: 45, power: 29 },
     solution: [
-      { type: 'miner', x: 0, y: 1, dir: 2 },
-      { type: 'smelter', x: 1, y: 3, dir: 1, recipe: 'ferrite_bar' },
-      { type: 'constructor', x: 2, y: 2, dir: 1, recipe: 'rod' },
+      { type: 'miner', x: 0, y: 1, dir: 1 },
+      { type: 'smelter', x: 2, y: 1, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 2, dir: 1, recipe: 'rod' },
       { type: 'constructor', x: 4, y: 2, dir: 2, recipe: 'bolts' },
       { type: 'constructor', x: 3, y: 3, dir: 1, recipe: 'bolts' },
       { type: 'constructor', x: 2, y: 4, dir: 1, recipe: 'rod' },
-      { type: 'constructor', x: 3, y: 4, dir: 1, recipe: 'bolts' },
-      { type: 'splitter', x: 3, y: 2, dir: 1 },
-      { type: 'splitter', x: 2, y: 3, dir: 1 },
-      { type: 'belt', x: 0, y: 2, dir: 2 },
-      { type: 'belt', x: 0, y: 3, dir: 1 },
-      { type: 'belt', x: 4, y: 4, dir: 0 },
+      { type: 'constructor', x: 4, y: 4, dir: 0, recipe: 'bolts' },
+      { type: 'splitter', x: 2, y: 2, dir: 2 },
+      { type: 'splitter', x: 3, y: 4, dir: 1 },
+      { type: 'belt', x: 1, y: 1, dir: 1 },
+      { type: 'belt', x: 2, y: 3, dir: 2 },
     ],
     tutorial: [],
   },
@@ -1424,7 +1547,7 @@ FF.levels = [
   {
     id: 'c09', chapter: 'Act I: Landfall', name: 'Wound Up',
     brief: 'Coils, 12 a minute: rod from the ferrite seam, wire from the cuprite seam, and the seams are in opposite corners. Belts cannot cross each other, so somebody has to think, and dispatch has nominated you.',
-    hint: 'Use two assemblers, each with its own rod press and wire drawer. Bring ferrite around one side of the terminal and cuprite around the other, and deliver from above and below.',
+    hint: 'Use two assemblers, each with its own rod press and wire drawer. Bring ferrite around one side of the terminal and cuprite around the other, and deliver from two sides.',
     w: 9, h: 5,
     map: [
       '#F.......',
@@ -1456,54 +1579,332 @@ FF.levels = [
       { type: 'belt', x: 3, y: 3, dir: 0 },
       { type: 'belt', x: 3, y: 4, dir: 0 },
     ],
-    tutorial: [],
+    tutorial: [
+      'Two ores on one plot: click a smelter to choose which bar it makes. A smelter set to the wrong ore just sits there.',
+    ],
   },
   {
     id: 'c10', chapter: 'Act I: Landfall', name: 'Housing Crisis',
     brief: 'The big one: motor housings, 3 a minute, each a braced plate and two coils. Three kinds of assembler, two ores, one 100 MW reactor, and everything Kessa-4 has taught you so far.',
     hint: 'Think of it as three small factories: a braced-plate cell and a coil line, both feeding the final assembler. Coils alone eat 12 rods a minute, so one rod press is not enough.',
-    w: 12, h: 8,
+    w: 10, h: 7,
     map: [
-      '............',
-      '.F......#...',
-      '............',
-      '...#......T.',
-      '.F..........',
-      '......#.....',
-      '....C.......',
-      '............',
+      '..........',
+      'F......#..',
+      '.......#..',
+      '..#.....T.',
+      'F......#..',
+      '.....#.#..',
+      '...C......',
     ],
     unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
     recipes: ['ferrite_bar', 'copper_bar', 'plate', 'rod', 'bolts', 'wire', 'braced_plate', 'coil', 'motor_housing'],
     goal: { item: 'motor_housing', rate: 3 },
     powerCap: 100,
-    par: { cells: 21, cost: 95, power: 92 },
+    par: { cells: 20, cost: 94, power: 92 },
     solution: [
-      { type: 'miner', x: 1, y: 1, dir: 1 },
-      { type: 'miner', x: 1, y: 4, dir: 1 },
-      { type: 'miner', x: 4, y: 6, dir: 1 },
-      { type: 'smelter', x: 2, y: 1, dir: 1, recipe: 'ferrite_bar' },
-      { type: 'smelter', x: 2, y: 4, dir: 1, recipe: 'ferrite_bar' },
-      { type: 'smelter', x: 5, y: 6, dir: 0, recipe: 'copper_bar' },
-      { type: 'constructor', x: 4, y: 1, dir: 1, recipe: 'rod' },
-      { type: 'constructor', x: 5, y: 1, dir: 2, recipe: 'bolts' },
-      { type: 'constructor', x: 3, y: 2, dir: 1, recipe: 'plate' },
-      { type: 'constructor', x: 4, y: 4, dir: 1, recipe: 'rod' },
-      { type: 'constructor', x: 5, y: 5, dir: 0, recipe: 'wire' },
-      { type: 'assembler', x: 5, y: 2, dir: 2, recipe: 'braced_plate' },
-      { type: 'assembler', x: 5, y: 3, dir: 1, recipe: 'motor_housing' },
-      { type: 'assembler', x: 5, y: 4, dir: 0, recipe: 'coil' },
-      { type: 'splitter', x: 3, y: 1, dir: 1 },
-      { type: 'belt', x: 4, y: 2, dir: 1 },
+      { type: 'miner', x: 0, y: 1, dir: 1 },
+      { type: 'miner', x: 0, y: 4, dir: 1 },
+      { type: 'miner', x: 3, y: 6, dir: 1 },
+      { type: 'smelter', x: 1, y: 1, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 1, y: 4, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 4, y: 6, dir: 0, recipe: 'copper_bar' },
+      { type: 'constructor', x: 3, y: 1, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 4, y: 1, dir: 2, recipe: 'bolts' },
+      { type: 'constructor', x: 2, y: 2, dir: 1, recipe: 'plate' },
+      { type: 'constructor', x: 3, y: 4, dir: 1, recipe: 'rod' },
+      { type: 'constructor', x: 4, y: 5, dir: 0, recipe: 'wire' },
+      { type: 'assembler', x: 4, y: 2, dir: 2, recipe: 'braced_plate' },
+      { type: 'assembler', x: 4, y: 3, dir: 1, recipe: 'motor_housing' },
+      { type: 'assembler', x: 4, y: 4, dir: 0, recipe: 'coil' },
+      { type: 'splitter', x: 2, y: 1, dir: 1 },
+      { type: 'belt', x: 3, y: 2, dir: 1 },
+      { type: 'belt', x: 5, y: 3, dir: 1 },
       { type: 'belt', x: 6, y: 3, dir: 1 },
       { type: 'belt', x: 7, y: 3, dir: 1 },
-      { type: 'belt', x: 8, y: 3, dir: 1 },
-      { type: 'belt', x: 9, y: 3, dir: 1 },
-      { type: 'belt', x: 3, y: 4, dir: 1 },
+      { type: 'belt', x: 2, y: 4, dir: 1 },
     ],
     tutorial: [],
   },
 ];
+
+if (typeof module !== 'undefined') module.exports = FF.levels;
+
+</script>
+<script>
+/* ---- src/levels-act2.js ---- */
+// Act II: Deep Survey. Contracts c11-c15 (owner: Mesa). Pure data, appended to FF.levels after Act I.
+// Every par is the score of the reference solution below; tests/levels.test.mjs verifies each one.
+var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalThis.FF || {});
+FF.levels = (FF.levels || []).concat([
+  {
+    id: 'c11', name: 'Bottleneck Pass', chapter: 'Act II: Deep Survey',
+    brief: 'Dispatch has raised your plate quota to 80 a minute and narrowed your access road to one canyon, one tile wide. A standard belt moves 60. Dispatch is aware of arithmetic and expects the same of you.',
+    hint: 'A belt carries 60 items a minute, a fast belt 120. Three plate constructors exactly fill a standard belt; the fourth has to join on a fast one. Belts take items from behind and from both sides, so a constructor can unload straight onto a passing belt.',
+    w: 10, h: 7,
+    map: [
+      '.....#F###',
+      '.F..F..###',
+      '...#...###',
+      '.........T',
+      '...F..####',
+      '....F..###',
+      '#......###',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'plate'],
+    goal: { item: 'plate', rate: 80 },
+    powerCap: null,
+    par: { cells: 16, cost: 67, power: 52 },
+    solution: [
+      { type: 'miner', x: 6, y: 0, dir: 2 },
+      { type: 'miner', x: 4, y: 1, dir: 1 },
+      { type: 'miner', x: 3, y: 4, dir: 1 },
+      { type: 'miner', x: 4, y: 5, dir: 1 },
+      { type: 'smelter', x: 5, y: 1, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 6, y: 1, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 4, y: 4, dir: 0, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 5, y: 5, dir: 0, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 5, y: 2, dir: 2, recipe: 'plate' },
+      { type: 'constructor', x: 6, y: 2, dir: 2, recipe: 'plate' },
+      { type: 'constructor', x: 4, y: 3, dir: 1, recipe: 'plate' },
+      { type: 'constructor', x: 5, y: 4, dir: 0, recipe: 'plate' },
+      { type: 'belt2', x: 6, y: 3, dir: 1 },
+      { type: 'belt2', x: 7, y: 3, dir: 1 },
+      { type: 'belt2', x: 8, y: 3, dir: 1 },
+      { type: 'belt', x: 5, y: 3, dir: 1 },
+    ],
+    tutorial: [],
+  },
+  {
+    id: 'c12', name: 'Not One Bolt Short', chapter: 'Act II: Deep Survey',
+    brief: 'Survey found exactly one ferrite node on this shelf, and Accounts found exactly 29 MW. Dispatch still wants 120 bolts a minute, so every bar becomes a rod and every rod becomes bolts. Spillage will be itemised.',
+    hint: 'One smelter feeds two rod constructors; their 30 rods must reach three bolt constructors at 10 each. A splitter only hands over where there is room, so two splitters can share the middle machine. The terminal takes deliveries on every open side.',
+    w: 9, h: 7,
+    map: [
+      'F...#....',
+      '.......#.',
+      '.#.......',
+      '.........',
+      '#.......#',
+      '.........',
+      '##..T..##',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'rod', 'bolts'],
+    goal: { item: 'bolts', rate: 120 },
+    powerCap: 29,
+    par: { cells: 16, cost: 51, power: 29 },
+    solution: [
+      { type: 'miner', x: 0, y: 0, dir: 1 },
+      { type: 'smelter', x: 4, y: 3, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 4, dir: 2, recipe: 'rod' },
+      { type: 'constructor', x: 5, y: 4, dir: 2, recipe: 'rod' },
+      { type: 'constructor', x: 4, y: 5, dir: 2, recipe: 'bolts' },
+      { type: 'constructor', x: 3, y: 6, dir: 1, recipe: 'bolts' },
+      { type: 'constructor', x: 5, y: 6, dir: 3, recipe: 'bolts' },
+      { type: 'splitter', x: 4, y: 4, dir: 2 },
+      { type: 'splitter', x: 3, y: 5, dir: 2 },
+      { type: 'splitter', x: 5, y: 5, dir: 2 },
+      { type: 'belt', x: 1, y: 0, dir: 1 },
+      { type: 'belt', x: 2, y: 0, dir: 1 },
+      { type: 'belt', x: 3, y: 0, dir: 2 },
+      { type: 'belt', x: 3, y: 1, dir: 2 },
+      { type: 'belt', x: 3, y: 2, dir: 1 },
+      { type: 'belt', x: 4, y: 2, dir: 2 },
+    ],
+    tutorial: [],
+  },
+  {
+    id: 'c14', name: 'Lean Margins', chapter: 'Act II: Deep Survey',
+    brief: 'The grid allowance for this shelf is 68 MW, which Accounts describes as generous. Deliver 10 braced plates a minute. That much power buys two miners and not one machine more, so nothing they dig may go to waste.',
+    hint: '60 bars a minute have to split three ways: 22.5 to each plate constructor and 15 to the one rod constructor you can afford. Do not measure it out. Let both smelters\' splitters reach the rod constructor, and the machines that are full will push the rest where it is needed.',
+    w: 9, h: 7,
+    map: [
+      '#.F.F..##',
+      '........#',
+      '.........',
+      '#........',
+      '....T..#.',
+      '..#......',
+      'F...#...#',
+    ],
+    unlocks: ['belt', 'belt2', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'plate', 'rod', 'bolts', 'braced_plate'],
+    goal: { item: 'braced_plate', rate: 10 },
+    powerCap: 68,
+    par: { cells: 18, cost: 78, power: 68 },
+    solution: [
+      { type: 'miner', x: 2, y: 0, dir: 1 },
+      { type: 'miner', x: 4, y: 0, dir: 1 },
+      { type: 'smelter', x: 3, y: 0, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'smelter', x: 5, y: 0, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 2, y: 1, dir: 2, recipe: 'plate' },
+      { type: 'constructor', x: 4, y: 1, dir: 2, recipe: 'rod' },
+      { type: 'constructor', x: 3, y: 2, dir: 3, recipe: 'bolts' },
+      { type: 'constructor', x: 5, y: 2, dir: 2, recipe: 'plate' },
+      { type: 'constructor', x: 4, y: 3, dir: 1, recipe: 'bolts' },
+      { type: 'assembler', x: 2, y: 2, dir: 2, recipe: 'braced_plate' },
+      { type: 'assembler', x: 5, y: 3, dir: 2, recipe: 'braced_plate' },
+      { type: 'splitter', x: 3, y: 1, dir: 2 },
+      { type: 'splitter', x: 5, y: 1, dir: 2 },
+      { type: 'splitter', x: 4, y: 2, dir: 2 },
+      { type: 'belt', x: 2, y: 3, dir: 1 },
+      { type: 'belt', x: 3, y: 3, dir: 2 },
+      { type: 'belt', x: 3, y: 4, dir: 1 },
+      { type: 'belt', x: 5, y: 4, dir: 3 },
+    ],
+    tutorial: [],
+  },
+]);
+if (typeof module !== 'undefined') module.exports = FF.levels;
+
+</script>
+<script>
+/* ---- src/levels-challenges.js ---- */
+// Ferrite Frontier — Challenge contracts x01–x05 (owner: Ridge). Pure data, classic script.
+// APPENDS to FF.levels, so it must load after levels.js / levels-act2.js.
+// Each challenge is built around one constraint; the note above each level says which, and what fails without it.
+// Directions: 0 = N, 1 = E, 2 = S, 3 = W. `par` is score(solution); tests/levels.test.mjs checks it.
+var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalThis.FF || {});
+
+FF.levels = (FF.levels || []).concat([
+  // x01 — No belts at all. A splitter with a single taker is a conveyor (input from its back only, so turns
+  // have to be planned), and it hands bars straight to constructors. Nothing can merge two rod lines, so
+  // both constructors have to touch the terminal. One constructor alone tops out at 15/min.
+  {
+    id: 'x01', chapter: 'Challenges', name: 'Back-Ordered',
+    brief: 'Dispatch regrets that your belts are on a later lander; the splitters arrived fine, and the terminal still expects 30 rods a minute.',
+    hint: 'Nobody said a splitter has to split. Also, the terminal has four sides and no opinions about what is parked against them.',
+    w: 6, h: 4,
+    map: [
+      'F.....',
+      '......',
+      '....T.',
+      '......',
+    ],
+    unlocks: ['miner', 'smelter', 'constructor', 'splitter'],
+    recipes: ['ferrite_bar', 'rod'],
+    goal: { item: 'rod', rate: 30 },
+    powerCap: null,
+    par: { cells: 7, cost: 27, power: 17 },
+    solution: [
+      { type: 'miner', x: 0, y: 0, dir: 1 },
+      { type: 'splitter', x: 1, y: 0, dir: 1 },
+      { type: 'splitter', x: 2, y: 0, dir: 1 },
+      { type: 'smelter', x: 3, y: 0, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'splitter', x: 3, y: 1, dir: 2 },
+      { type: 'constructor', x: 4, y: 1, dir: 2, recipe: 'rod' },
+      { type: 'constructor', x: 3, y: 2, dir: 1, recipe: 'rod' },
+    ],
+    tutorial: [],
+  },
+
+  // x02 — The terminal's only open side is a slot two cells long, and 90 bars a minute have to pass through it.
+  // A belt moves 60 and fast belts are locked; a merger moves 120 even with a single feeder, so the slot has
+  // to be paved with mergers. Any belt left in the slot caps the contract at 60.
+  {
+    id: 'x02', chapter: 'Challenges', name: 'One Door',
+    brief: 'Dispatch parked the terminal at the back of a slot one tile wide, wants 90 bars a minute through it, and notes for the record that a belt moves 60.',
+    hint: 'Something in your kit passes items along twice as fast as a belt. It is not sold as a belt, and it does not mind having only one line coming in.',
+    w: 7, h: 3,
+    map: [
+      '.F..###',
+      'F.....T',
+      '.F..###',
+    ],
+    unlocks: ['belt', 'merger', 'miner', 'smelter'],
+    recipes: ['ferrite_bar'],
+    goal: { item: 'ferrite_bar', rate: 90 },
+    powerCap: null,
+    par: { cells: 10, cost: 35, power: 27 },
+    solution: [
+      { type: 'miner', x: 1, y: 0, dir: 1 },
+      { type: 'smelter', x: 2, y: 0, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'miner', x: 0, y: 1, dir: 1 },
+      { type: 'smelter', x: 1, y: 1, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'miner', x: 1, y: 2, dir: 1 },
+      { type: 'smelter', x: 2, y: 2, dir: 0, recipe: 'ferrite_bar' },
+      { type: 'merger', x: 2, y: 1, dir: 1 },
+      { type: 'merger', x: 3, y: 1, dir: 1 },
+      { type: 'merger', x: 4, y: 1, dir: 1 },
+      { type: 'merger', x: 5, y: 1, dir: 1 },
+    ],
+    tutorial: [],
+  },
+
+  // x03 — Same symptom as x02, opposite cure. One gap in the ridge, plain belts only, so at most 60 items a
+  // minute cross it. 60 plates need 90 bars: ore or bars through the gap can never be enough (best mix is
+  // 53 plates), so all three presses have to sit on the cramped side and the gap carries nothing but plates.
+  {
+    id: 'x03', chapter: 'Challenges', name: 'The Narrows',
+    brief: 'Sixty plates a minute, one gap in the ridge, plain belts only; dispatch observes that ninety bars will not fit through it and considers the matter closed.',
+    hint: 'Count what crosses the gap, not what arrives. Three bars go into a press and only two plates come out.',
+    w: 7, h: 5,
+    map: [
+      '....#..',
+      '.F..#..',
+      'F.....T',
+      '.F..#..',
+      '....#..',
+    ],
+    unlocks: ['belt', 'miner', 'smelter', 'constructor'],
+    recipes: ['ferrite_bar', 'plate'],
+    goal: { item: 'plate', rate: 60 },
+    powerCap: null,
+    par: { cells: 12, cost: 48, power: 39 },
+    solution: [
+      { type: 'miner', x: 0, y: 2, dir: 1 },
+      { type: 'smelter', x: 1, y: 2, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 2, y: 2, dir: 1, recipe: 'plate' },
+      { type: 'miner', x: 1, y: 1, dir: 1 },
+      { type: 'smelter', x: 2, y: 1, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 1, dir: 2, recipe: 'plate' },
+      { type: 'miner', x: 1, y: 3, dir: 1 },
+      { type: 'smelter', x: 2, y: 3, dir: 1, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 3, y: 3, dir: 0, recipe: 'plate' },
+      { type: 'belt', x: 3, y: 2, dir: 1 },
+      { type: 'belt', x: 4, y: 2, dir: 1 },
+      { type: 'belt', x: 5, y: 2, dir: 1 },
+    ],
+    tutorial: [],
+  },
+
+  // x04 — Both ore nodes open onto the same single cell, so the two ores leave the pocket on one mixed lane.
+  // A belt in that cell always prefers the miner behind it; once the lane backs up the other ore never gets on
+  // and the assembler starves for good. A merger takes turns. Further down, a splitter that touches both
+  // smelters sorts the lane, because it only hands an item to a machine that accepts it.
+  {
+    id: 'x04', chapter: 'Challenges', name: 'Mixed Company',
+    brief: 'Survey found ferrite and cuprite sharing one pocket with one way out, and dispatch wants 6 coils a minute from whatever comes down that lane.',
+    hint: 'A belt junction plays favourites; a merger takes turns. And a splitter can only hand an item to a machine that is willing to take it.',
+    w: 7, h: 4,
+    map: [
+      'F......',
+      '#C#....',
+      '.#...T.',
+      '.......',
+    ],
+    unlocks: ['belt', 'splitter', 'merger', 'miner', 'smelter', 'constructor', 'assembler'],
+    recipes: ['ferrite_bar', 'copper_bar', 'rod', 'wire', 'coil'],
+    goal: { item: 'coil', rate: 6 },
+    powerCap: null,
+    par: { cells: 10, cost: 45, power: 41 },
+    solution: [
+      { type: 'miner', x: 0, y: 0, dir: 1 },
+      { type: 'miner', x: 1, y: 1, dir: 0 },
+      { type: 'merger', x: 1, y: 0, dir: 1 },
+      { type: 'belt', x: 2, y: 0, dir: 1 },
+      { type: 'splitter', x: 3, y: 0, dir: 1 },
+      { type: 'smelter', x: 4, y: 0, dir: 2, recipe: 'ferrite_bar' },
+      { type: 'constructor', x: 4, y: 1, dir: 2, recipe: 'rod' },
+      { type: 'smelter', x: 3, y: 1, dir: 2, recipe: 'copper_bar' },
+      { type: 'constructor', x: 3, y: 2, dir: 1, recipe: 'wire' },
+      { type: 'assembler', x: 4, y: 2, dir: 1, recipe: 'coil' },
+    ],
+    tutorial: [],
+  },
+]);
 
 if (typeof module !== 'undefined') module.exports = FF.levels;
 
@@ -1600,6 +2001,15 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
 
   // ---------------------------------------------------------------- helpers
   function clamp01(value) { return value < 0 ? 0 : value > 1 ? 1 : value; }
+  // A cell or icon size the kit can draw: a finite number of at least one pixel. Every public draw function returns
+  // early on anything else: a real canvas throws on zero-size sprites, negative radii and non-finite gradients,
+  // and a vanishingly small cell would send the belt slat loop round millions of times.
+  function drawableSize(size) { return typeof size === 'number' && size >= 1 && size < Infinity; }
+  // Fraction in [0, 1), also for negative values (`value % 1` is negative for negative time).
+  function wrap01(value) { return value - Math.floor(value); }
+  // Table lookup that ignores inherited keys: own(palette.items, 'constructor') is undefined, not Object.
+  var hasOwn = Object.prototype.hasOwnProperty;
+  function own(table, key) { return hasOwn.call(table, key) ? table[key] : undefined; }
   function hash(x, y, salt) {
     var value = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul((salt | 0) + 1, 1442695041)) | 0;
     value = Math.imul(value ^ (value >>> 13), 1274126177);
@@ -1787,7 +2197,24 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (random() < 0.6) boulder(ctx, left + cellSize * (0.2 + random() * 0.6), top + cellSize * (0.72 + random() * 0.12), cellSize * 0.08, random, cellSize);
   }
 
-  function crystalShards(column, row, cellSize) { // crystal cluster geometry, deterministic per cell
+  // Crystal geometry is fixed per cell and cell size, and nodeFx asks for it for every node on every frame,
+  // so it is kept: shardSets[cellSize][row][column]. Only a few cell sizes are kept at once.
+  var shardSets = {}, shardSetCount = 0, shardEntryCount = 0, SHARD_SIZE_LIMIT = 4, SHARD_ENTRY_LIMIT = 512;
+  function crystalShards(column, row, cellSize) {
+    var sizeSet = shardSets[cellSize];
+    if (!sizeSet) {
+      if (shardSetCount >= SHARD_SIZE_LIMIT) { shardSets = {}; shardSetCount = 0; shardEntryCount = 0; }
+      sizeSet = shardSets[cellSize] = {}; shardSetCount++;
+    }
+    var rowSet = sizeSet[row] || (sizeSet[row] = {}), shards = rowSet[column];
+    if (!shards) {
+      if (shardEntryCount >= SHARD_ENTRY_LIMIT) { shardSets = {}; shardSetCount = 0; shardEntryCount = 0; return buildCrystalShards(column, row, cellSize); }
+      shards = rowSet[column] = buildCrystalShards(column, row, cellSize);
+      shardEntryCount++;
+    }
+    return shards;
+  }
+  function buildCrystalShards(column, row, cellSize) { // crystal cluster geometry, deterministic per cell
     var random = seededRandom(column, row, 37), count = 5 + ((random() * 3) | 0), shards = [], index;
     var baseAngle = random() * TAU;
     for (index = 0; index < count; index++) {
@@ -1801,7 +2228,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   function drawNode(ctx, left, top, cellSize, column, row, ore) {
-    var oreColors = WORLD.ore[ore] || WORLD.ore.ferrite_ore;
+    var oreColors = own(WORLD.ore, ore) || WORLD.ore.ferrite_ore;
     var centerX = left + cellSize / 2, centerY = top + cellSize / 2;
     // stained ground + base glow
     ctx.fillStyle = oreColors.stain; circle(ctx, centerX, centerY + cellSize * 0.04, cellSize * 0.42); ctx.fill();
@@ -1838,13 +2265,15 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   // animated overlay for one node: slow glow pulse + tip glints (cheap, additive)
-  var glowCache = {};
+  var glowCache = {}, glowCount = 0, GLOW_LIMIT = 8; // one gradient per ore and cell size
   function nodeFx(ctx, left, top, cellSize, column, row, ore, timeSeconds) {
-    var oreColors = WORLD.ore[ore] || WORLD.ore.ferrite_ore;
+    var oreColors = own(WORLD.ore, ore) || WORLD.ore.ferrite_ore;
     var centerX = left + cellSize / 2, centerY = top + cellSize / 2, cellPhase = (hash(column, row, 5) / 4294967296) * TAU;
     var pulse = 0.5 + 0.5 * Math.sin(timeSeconds * 1.7 + cellPhase);
     var cacheKey = ore + '|' + cellSize, gradient = glowCache[cacheKey];
     if (!gradient && ctx.createRadialGradient) {
+      if (glowCount >= GLOW_LIMIT) { glowCache = {}; glowCount = 0; } // a window resize walks through many cell sizes
+      glowCount++;
       gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, cellSize * 0.62);
       gradient.addColorStop(0, rgba(oreColors.glow, 0.55));
       gradient.addColorStop(0.45, rgba(oreColors.glow, 0.18));
@@ -1885,6 +2314,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   function drawTerrain(ctx, cell, x, y, cellSize, timeSeconds) {
+    if (!drawableSize(cellSize)) return;
     var column = cellIndex(x, cellSize), row = cellIndex(y, cellSize);
     drawTerrainStatic(ctx, cell, x, y, cellSize, column, row, 0);
     if (cell && cell.terrain === 'node') nodeFx(ctx, x, y, cellSize, column, row, cell.ore, timeSeconds || 0);
@@ -1893,13 +2323,16 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   // Draw every cell's static terrain (ground first, then rocks/nodes so shadows overlap
   // neighbours correctly). Intended for an offscreen canvas the UI caches; redraw on resize.
   function renderTerrainLayer(ctx, parsedLevel, cellSize) {
+    if (!drawableSize(cellSize) || !parsedLevel || !parsedLevel.cells) return;
     var column, row, cells;
     for (row = 0; row < parsedLevel.h; row++) {
       cells = parsedLevel.cells[row];
+      if (!cells) continue;
       for (column = 0; column < parsedLevel.w; column++) drawTerrainStatic(ctx, cells[column], column * cellSize, row * cellSize, cellSize, column, row, 1);
     }
     for (row = 0; row < parsedLevel.h; row++) {
       cells = parsedLevel.cells[row];
+      if (!cells) continue;
       for (column = 0; column < parsedLevel.w; column++) {
         if (cells[column] && cells[column].terrain !== 'ground') drawTerrainStatic(ctx, cells[column], column * cellSize, row * cellSize, cellSize, column, row, 2);
       }
@@ -1907,8 +2340,11 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
   // Animated part of the terrain (ore pulse). Draw each frame on top of the cached layer.
   function drawTerrainFx(ctx, parsedLevel, cellSize, timeSeconds) {
+    if (!drawableSize(cellSize) || !parsedLevel || !parsedLevel.cells) return;
+    timeSeconds = timeSeconds || 0;
     for (var row = 0; row < parsedLevel.h; row++) {
       var cells = parsedLevel.cells[row];
+      if (!cells) continue;
       for (var column = 0; column < parsedLevel.w; column++) {
         if (cells[column] && cells[column].terrain === 'node') nodeFx(ctx, column * cellSize, row * cellSize, cellSize, column, row, cells[column].ore, timeSeconds);
       }
@@ -1963,7 +2399,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     ctx.fillStyle = palette.tealDim; turnedRect(ctx, turns, -width / 2, halfBody - cellSize * 0.03, width, bevel);
     ctx.translate(-centerX, -centerY);
   }
-  function lampColor(status) { return palette.status[status] || palette.status.idle; }
+  function lampColor(status) { return own(palette.status, status) || palette.status.idle; }
   function lamp(ctx, x, y, radius, status, timeSeconds) {
     var strength = 1, on = true, color = lampColor(status);
     if (status === 'idle' || status === 'empty' || !status) on = false;
@@ -1988,7 +2424,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     glyph(ctx, recipeOutput(recipe), x, y, radius * 0.95);
   }
   function recipeOutput(recipe) {
-    var recipeInfo = FF.engine && FF.engine.RECIPES && FF.engine.RECIPES[recipe];
+    var recipeInfo = FF.engine && FF.engine.RECIPES && own(FF.engine.RECIPES, recipe);
     if (recipeInfo && recipeInfo.outputs) { for (var itemId in recipeInfo.outputs) return itemId; }
     return recipe; // recipe ids equal their output item ids in this game
   }
@@ -2080,20 +2516,25 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     ctx.restore();
   }
   // chevron pointing "up" (straight) or along an arc at `angle` / `radius` around (originX, originY)
+  // (This runs for every chevron of every belt on every frame, so it builds no arrays.)
   function chevronPath(ctx, originX, originY, halfWidth, height, thickness, straight, angle, radius) {
-    var points = [-halfWidth, height / 2, 0, -height / 2, halfWidth, height / 2,
-      halfWidth, height / 2 + thickness, 0, -height / 2 + thickness, -halfWidth, height / 2 + thickness];
-    var index;
+    var tipY = -height / 2, wingY = height / 2;
     if (straight) {
-      ctx.moveTo(originX + points[0], originY + points[1]);
-      for (index = 2; index < 12; index += 2) ctx.lineTo(originX + points[index], originY + points[index + 1]);
+      ctx.moveTo(originX - halfWidth, originY + wingY);
+      ctx.lineTo(originX, originY + tipY);
+      ctx.lineTo(originX + halfWidth, originY + wingY);
+      ctx.lineTo(originX + halfWidth, originY + wingY + thickness);
+      ctx.lineTo(originX, originY + tipY + thickness);
+      ctx.lineTo(originX - halfWidth, originY + wingY + thickness);
     } else {
       var cosine = Math.cos(angle), sine = Math.sin(angle);
-      for (index = 0; index < 12; index += 2) {
-        var radial = radius + points[index], along = points[index + 1];
-        var pointX = originX + radial * cosine - along * sine, pointY = originY + radial * sine + along * cosine;
-        if (index === 0) ctx.moveTo(pointX, pointY); else ctx.lineTo(pointX, pointY);
-      }
+      var innerRadial = radius - halfWidth, outerRadial = radius + halfWidth;
+      ctx.moveTo(originX + innerRadial * cosine - wingY * sine, originY + innerRadial * sine + wingY * cosine);
+      ctx.lineTo(originX + radius * cosine - tipY * sine, originY + radius * sine + tipY * cosine);
+      ctx.lineTo(originX + outerRadial * cosine - wingY * sine, originY + outerRadial * sine + wingY * cosine);
+      ctx.lineTo(originX + outerRadial * cosine - (wingY + thickness) * sine, originY + outerRadial * sine + (wingY + thickness) * cosine);
+      ctx.lineTo(originX + radius * cosine - (tipY + thickness) * sine, originY + radius * sine + (tipY + thickness) * cosine);
+      ctx.lineTo(originX + innerRadial * cosine - (wingY + thickness) * sine, originY + innerRadial * sine + (wingY + thickness) * cosine);
     }
     ctx.closePath();
   }
@@ -2121,7 +2562,37 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   // ---------------------------------------------------------------- sprite cache
   // Static machine parts (chassis, ports, housings, badges) are rendered once per
   // type/direction/look at the target's device-pixel size, then blitted each frame.
-  var spriteCache = {}, spriteCount = 0, SPRITE_LIMIT = 400;
+  // Sprites are grouped per cell size and pixel scale. A window resize or a DPR change makes a whole new group,
+  // so only the few most recently used groups are kept (board, title backdrop, icons); the rest are dropped
+  // instead of lingering until the total limit wipes everything.
+  var spriteSets = {}, spriteSetCount = 0, spriteCount = 0, spriteUseStamp = 0, lastSpriteSet = null;
+  var SPRITE_LIMIT = 400;       // total sprites kept (safety net)
+  var SPRITE_SIZE_LIMIT = 6;    // cell size / pixel scale groups kept at once
+  var SPRITE_MAX_PIXELS = 640;  // sprites wider than this are not cached: they are painted directly instead
+  function clearSprites() { spriteSets = {}; spriteSetCount = 0; spriteCount = 0; lastSpriteSet = null; }
+  function dropStalestSpriteSet() {
+    var stalest = null;
+    for (var sizeKey in spriteSets) if (!stalest || spriteSets[sizeKey].lastUsed < stalest.lastUsed) stalest = spriteSets[sizeKey];
+    if (!stalest) return;
+    delete spriteSets[stalest.sizeKey];
+    spriteSetCount--; spriteCount -= stalest.count;
+    if (lastSpriteSet === stalest) lastSpriteSet = null;
+  }
+  function spriteSetFor(cellSize, pixelSize) {
+    var spriteSet = lastSpriteSet;
+    if (!spriteSet || spriteSet.cellSize !== cellSize || spriteSet.pixelSize !== pixelSize) {
+      var sizeKey = cellSize + '|' + pixelSize;
+      spriteSet = spriteSets[sizeKey];
+      if (!spriteSet) {
+        if (spriteSetCount >= SPRITE_SIZE_LIMIT) dropStalestSpriteSet();
+        spriteSet = spriteSets[sizeKey] = { sizeKey: sizeKey, cellSize: cellSize, pixelSize: pixelSize, sprites: {}, count: 0, lastUsed: 0 };
+        spriteSetCount++;
+      }
+      lastSpriteSet = spriteSet;
+    }
+    spriteSet.lastUsed = ++spriteUseStamp;
+    return spriteSet;
+  }
   function makeCanvas(width, height) {
     try {
       if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
@@ -2136,16 +2607,17 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   // paint(targetCtx, centerX, centerY) draws the static layer for a cell centred at (centerX, centerY)
   function drawStatic(ctx, key, left, top, cellSize, paint) {
     var scale = contextScale(ctx), margin = Math.ceil(cellSize * 0.1), size = cellSize + margin * 2;
-    var pixelSize = Math.ceil(size * scale), fullKey = key + '|' + cellSize + '|' + pixelSize;
-    var sprite = spriteCache[fullKey];
+    var pixelSize = Math.ceil(size * scale);
+    if (pixelSize > SPRITE_MAX_PIXELS) { paint(ctx, left + cellSize / 2, top + cellSize / 2); return; }
+    var spriteSet = spriteSetFor(cellSize, pixelSize), sprite = spriteSet.sprites[key];
     if (!sprite) {
-      if (spriteCount >= SPRITE_LIMIT) { spriteCache = {}; spriteCount = 0; }
+      if (spriteCount >= SPRITE_LIMIT) { clearSprites(); spriteSet = spriteSetFor(cellSize, pixelSize); }
       var canvas = makeCanvas(pixelSize, pixelSize), spriteCtx = canvas && canvas.getContext('2d');
       if (spriteCtx) {
         spriteCtx.setTransform(scale, 0, 0, scale, margin * scale, margin * scale);
         paint(spriteCtx, cellSize / 2, cellSize / 2);
-        sprite = spriteCache[fullKey] = canvas;
-        spriteCount++;
+        sprite = spriteSet.sprites[key] = canvas;
+        spriteSet.count++; spriteCount++;
       }
     }
     if (sprite) ctx.drawImage(sprite, 0, 0, pixelSize, pixelSize, left - margin, top - margin, size, size);
@@ -2170,7 +2642,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var centerX = left + cellSize / 2, centerY = top + cellSize / 2, dir = (building.dir | 0) & 3;
     var status = building.status || 'idle', tone = TONES.miner;
     var halfBody = cellSize * 0.41, working = status === 'working', lit = litLevel(status);
-    var ore = (opts && opts.ore) || building.ore, oreColors = WORLD.ore[ore] || null;
+    var ore = (opts && opts.ore) || building.ore, oreColors = own(WORLD.ore, ore) || null;
     drawStatic(ctx, 'miner|' + dir + '|' + (lit > 0) + '|' + ore, left, top, cellSize, function (target, spriteX, spriteY) {
       minerStatic(target, spriteX, spriteY, dir, cellSize, lit > 0, oreColors);
     });
@@ -2269,7 +2741,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       var smoke = phase(animKey, timeSeconds, 0.7, true, 0);
       ctx.fillStyle = '#8c8299';
       for (var puff = 0; puff < 3; puff++) {
-        var age = (smoke + puff / 3) % 1;
+        var age = wrap01(smoke + puff / 3);
         ctx.globalAlpha = 0.32 * (1 - age);
         circle(ctx, chimneyX + age * cellSize * 0.16, chimneyY - cellSize * 0.02 + age * cellSize * 0.06 - age * age * cellSize * 0.12, cellSize * (0.04 + age * 0.06));
         ctx.fill();
@@ -2316,7 +2788,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       constructorStatic(target, spriteX, spriteY, dir, cellSize, lit > 0);
     });
     // press head: rises slowly, slams down (top-down: higher = bigger, shadow offset further)
-    var cycle = phase(animKey, timeSeconds, 1.25, working, 0) % 1, lift;
+    var cycle = wrap01(phase(animKey, timeSeconds, 1.25, working, 0)), lift;
     if (cycle < 0.7) lift = Math.sin((cycle / 0.7) * HALF_PI);
     else if (cycle < 0.82) lift = 1;
     else if (cycle < 0.88) lift = 1 - (cycle - 0.82) / 0.06;
@@ -2470,6 +2942,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
 
   // ---------------------------------------------------------------- terminal
   function drawTerminal(ctx, x, y, cellSize, timeSeconds, progress) {
+    if (!drawableSize(cellSize)) return;
     timeSeconds = timeSeconds || 0;
     progress = clamp01(+progress || 0);
     var centerX = x + cellSize / 2, centerY = y + cellSize / 2, done = progress >= 1, index;
@@ -2597,11 +3070,11 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   function drawBuilding(ctx, building, cellSize, timeSeconds, opts) {
-    if (!building) return;
+    if (!building || !drawableSize(cellSize)) return;
     timeSeconds = timeSeconds || 0; opts = opts || {};
     var left = (building.x || 0) * cellSize, top = (building.y || 0) * cellSize;
     if (opts.ghost) {
-      var ghost = { type: building.type, x: 0, y: 0, dir: building.dir, recipe: building.recipe, status: 'idle', progress: 0 };
+      var ghost = { type: building.type, x: 0, y: 0, dir: building.dir, recipe: building.recipe, ore: building.ore, status: 'idle', progress: 0 };
       var scale = contextScale(ctx), margin = Math.ceil(cellSize * 0.12), size = cellSize + 2 * margin, pixelSize = Math.ceil(size * scale);
       var scratch = getScratch(pixelSize, pixelSize);
       ctx.save();
@@ -2753,13 +3226,14 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         break;
       }
       default: {
-        circle(ctx, 0, 0, 0.7); ctx.fillStyle = palette.items[type] || '#b9b2cc'; ctx.fill(); ctx.stroke();
+        circle(ctx, 0, 0, 0.7); ctx.fillStyle = own(palette.items, type) || '#b9b2cc'; ctx.fill(); ctx.stroke();
       }
     }
     ctx.restore();
   }
 
   function drawItem(ctx, type, centerX, centerY, cellSize) {
+    if (!drawableSize(cellSize)) return;
     var radius = cellSize * 0.21;
     ctx.fillStyle = 'rgba(4,3,8,0.45)';
     ctx.beginPath();
@@ -2768,9 +3242,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     ctx.fill();
     glyph(ctx, type, centerX, centerY, radius);
   }
-  function drawItemIcon(ctx, type, centerX, centerY, size) { glyph(ctx, type, centerX, centerY, size * 0.45); }
+  function drawItemIcon(ctx, type, centerX, centerY, size) { if (drawableSize(size)) glyph(ctx, type, centerX, centerY, size * 0.45); }
 
   function drawBuildingIcon(ctx, type, centerX, centerY, size, timeSeconds) {
+    if (!drawableSize(size)) return;
     ctx.save();
     ctx.translate(centerX - size / 2, centerY - size / 2);
     if (type === 'terminal') drawTerminal(ctx, 0, 0, size, timeSeconds || 0, 0.66);
@@ -2790,9 +3265,11 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     renderTerrainLayer: renderTerrainLayer,
     drawTerrainFx: drawTerrainFx,
     statusColor: function (status) { return lampColor(status); },
-    itemColor: function (type) { return palette.items[type] || '#b9b2cc'; },
+    itemColor: function (type) { return own(palette.items, type) || '#b9b2cc'; },
     resetAnim: function () { animationState = {}; },
-    clearSpriteCache: function () { spriteCache = {}; spriteCount = 0; }
+    clearSpriteCache: function () { clearSprites(); glowCache = {}; glowCount = 0; shardSets = {}; shardSetCount = 0; shardEntryCount = 0; },
+    // how much the sprite cache holds right now: { sprites, sizes } (for tests and debugging)
+    spriteCacheStats: function () { return { sprites: spriteCount, sizes: spriteSetCount }; }
   };
 
   if (typeof module !== 'undefined') module.exports = FF.art;
