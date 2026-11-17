@@ -7361,6 +7361,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function rotateAction(delta) {
     if (!play) return;
     var steps = (delta + 4) % 4;
+    // An open inspector wins: the player is looking at that building, even while a build tool is still held
+    // (tapping the machine you just placed opens its inspector without dropping the tool).
+    var inspected = play.sel && play.dom.pop.classList.contains('show') ? placementAt(play.sel.x, play.sel.y) : null;
+    if (inspected) { rotateBuilding(inspected, steps); return; }
     if (play.tool && play.tool !== 'remove') {
       play.dir = (play.dir + steps) % 4; play.ghostKey = '';
       paintRotDir(); sfx('rotate');
@@ -7368,13 +7372,16 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     }
     var target = play.sel || (play.pointerType === 'mouse' ? play.hover : null);
     var existing = target && placementAt(target.x, target.y);
-    if (existing) {
-      try { play.sim.rotate(existing.x, existing.y, steps); } catch (error) { /* ignore */ }
-      sfx('rotate'); layoutChanged(); refreshPop();
-      return;
-    }
+    if (existing) { rotateBuilding(existing, steps); return; }
     // Nothing to rotate: rotate the preset direction for the next placement.
     play.dir = (play.dir + steps) % 4; paintRotDir(); sfx('rotate');
+  }
+
+  function rotateBuilding(placement, steps) {
+    var turned = false;
+    try { turned = play.sim.rotate(placement.x, placement.y, steps); } catch (error) { turned = false; }
+    if (!turned) { sfx('error'); return; }
+    sfx('rotate'); layoutChanged(); refreshPop();
   }
 
   function togglePause() { if (!play) return; play.paused = !play.paused; sfx('click'); paintPause(); }
@@ -7785,7 +7792,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         pop.appendChild(dom.popRecipes);
       } else dom.popRecipes = null;
       pop.appendChild(make('div', { class: 'pop-actions' },
-        make('button', { class: 'btn small', type: 'button', onclick: function () { rotateAction(1); } }, 'Rotate'),
+        make('button', { class: 'btn small', type: 'button', onclick: function () { ensureAudio(); var selected = placementAt(cell.x, cell.y); if (selected) rotateBuilding(selected, 1); } }, 'Rotate'),
         make('button', { class: 'btn small danger', type: 'button', onclick: function () { removeAt(cell.x, cell.y); } }, 'Remove')));
     }
     pop.classList.add('show');
