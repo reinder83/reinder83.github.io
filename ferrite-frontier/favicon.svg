@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Ferrite Frontier: an amber output chevron over a teal belt chevron, on a dark machine-plate hexagon -->
+  <path d="M16 1.5 28.6 8.75v14.5L16 30.5 3.4 23.25V8.75z" fill="#1b1726" stroke="#f4a93c" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M8.6 18.6 16 11.2l7.4 7.4" fill="none" stroke="#f4a93c" stroke-width="4.4" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M11.2 24.2 16 19.4l4.8 4.8" fill="none" stroke="#3fd0c4" stroke-width="2.8" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>
