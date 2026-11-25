@@ -441,7 +441,7 @@ button, .tool, .contract { touch-action: manipulation; }
 .play-screen .bar-title .bar-name { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 
 /* goal card: teal frame, the target and how it goes, small chips for the rest */
-.play-screen .hud { display: block; flex: none; margin: 6px 12px 0; padding: 8px 12px; background: var(--surface); border: 0; border-radius: 18px; box-shadow: inset 0 0 0 2px var(--teal-frame); }
+.play-screen .hud { display: block; flex: none; margin: 6px 12px 0; padding: 7px 12px 8px; background: var(--surface); border: 0; border-radius: 18px; box-shadow: inset 0 0 0 2px var(--teal-frame); }
 .play-screen .hud .hud-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0; background: none; border: 0; border-radius: 0; }
 .hud-goal-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .hud-goal-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
@@ -463,19 +463,23 @@ button, .tool, .contract { touch-action: manipulation; }
 .meter-fill.power.warn { background: var(--warn); }
 .meter-fill.power.hot { background: var(--red); }
 .meter-target { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--amber); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45); }
-.hold-row .meter { flex: 1; }
+.hud-status { display: flex; flex-direction: column; align-items: flex-end; align-self: flex-start; min-width: 0; flex: 0 1 auto; }
+.hud-status .hud-sub { max-width: 100%; }
+.hud-status .hud-issues { height: 16px; max-width: 100%; font-size: 11px; line-height: 16px; text-align: right; }
+.meter .meter-fill.hold { top: auto; height: 3px; background: var(--amber); opacity: 0.9; }
+.meter .meter-fill.hold.ok { background: var(--green); }
 .hud-issues { height: 17px; font-size: 12px; line-height: 1.4; color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
 .hud-issues .bad { color: var(--red); }
 .hud-issues .warn { color: var(--warn); }
 .hud-issues .ok { color: var(--green); }
-.hud-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.hud-chips { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; min-width: 0; }
 .hud-sandbox .hud-chips { justify-content: flex-end; margin-left: auto; }
-.play-screen .hud-chips > * { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; position: relative; height: 24px; min-height: 24px; margin: 0; padding: 0 8px; border: 0; border-radius: 12px; background: var(--bg);
-  color: var(--text); font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: 0; line-height: 1; white-space: nowrap; }
+.play-screen .hud-chips > * { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; position: relative; height: 24px; min-height: 24px; margin: 0; padding: 0 3px; border: 0; border-radius: 12px; background: var(--bg);
+  color: var(--text); font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0; line-height: 1; white-space: nowrap; }
 .play-screen .hud-chips > button::after { content: ''; position: absolute; inset: -8px -3px; }
-.hud-chips .sc-k { color: var(--text-3); }
-.hud-chips .sc-v, .hud-chips .hud-num { font-family: var(--font-ui); font-size: 12px; font-weight: 600; line-height: 1; }
-.hud-chips .sc-p { font-family: var(--font-ui); font-size: 11px; color: var(--text-3); }
+.hud-chips .sc-k { color: var(--text-3); font-size: 10px; }
+.hud-chips .sc-v, .hud-chips .hud-num { font-family: var(--font-ui); font-size: 11px; font-weight: 600; line-height: 1; }
+.hud-chips .sc-p { margin-left: -2px; font-family: var(--font-ui); font-size: 10px; color: var(--text-3); }
 .hud-chips .sc.under { box-shadow: inset 0 0 0 1px rgba(61, 214, 192, 0.5); }
 .hud-chips .sc.under .sc-v { color: var(--teal-2); }
 .hud-chips .sc[data-metric="power"] { display: none; }
@@ -484,7 +488,7 @@ button, .tool, .contract { touch-action: manipulation; }
 .hud-chips .hud-power .meter { display: none; }
 .play-screen .hud-chips .moves-chip.low { color: var(--amber-2); background: rgba(244, 169, 59, 0.16); }
 .play-screen .hud-chips .moves-chip.out { color: var(--red-text); background: rgba(255, 90, 106, 0.16); }
-.play-screen .hud-chips .lives-chip { color: var(--red); letter-spacing: 1px; }
+.play-screen .hud-chips .lives-chip { color: var(--red); letter-spacing: 0; font-size: 10px; }
 .play-screen .hud-chips .credits-chip { color: var(--amber-2); }
 .play-screen .hud-chips .why-btn { color: var(--text-2); }
 .play-screen .hud-chips .why-btn.on { color: var(--red-text); background: rgba(255, 90, 106, 0.16); }
@@ -8040,10 +8044,11 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   // ------------------------------------------------------------------ rank (derived from medals; nothing extra is saved)
-  // A medal per metric at or under par plus the all-three medal: up to 4 per contract. Each title opens at a share of
-  // the medals the level files offer, so the ladder follows the real content.
-  var RANKS = [{ name: 'Prospector', share: 0 }, { name: 'Surveyor', share: 0.05 }, { name: 'Foreman', share: 0.15 },
-    { name: 'Engineer', share: 0.3 }, { name: 'Superintendent', share: 0.55 }, { name: 'Director', share: 0.85 }];
+  // A medal per metric at or under par plus the all-three medal: up to 4 per contract. Each title opens at a FIXED
+  // medal count, never a share of what the level files offer, so adding contracts or acts can't drop anyone a rank.
+  // Set from 208 medals on offer (Acts I-IV plus side contracts); the top titles keep headroom for later acts.
+  var RANKS = [{ name: 'Prospector', need: 0 }, { name: 'Surveyor', need: 10 }, { name: 'Foreman', need: 28 },
+    { name: 'Engineer', need: 60 }, { name: 'Superintendent', need: 112 }, { name: 'Director', need: 172 }];
   function medalsAvailable() {
     var total = 0;
     LEVELS.forEach(function (level) {
@@ -8064,9 +8069,9 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
   function rankInfo() {
     var total = medalsAvailable(), have = medalsEarned();
-    var steps = RANKS.map(function (rank) { return { name: rank.name, need: Math.ceil(total * rank.share) }; });
+    var steps = RANKS.map(function (rank) { return { name: rank.name, need: rank.need }; });
     var index = 0;
-    if (total > 0) steps.forEach(function (step, at) { if (have >= step.need) index = at; });
+    steps.forEach(function (step, at) { if (have >= step.need) index = at; });
     var next = steps[index + 1] || null;
     return { level: index + 1, name: steps[index].name, have: have, total: total, steps: steps, index: index, next: next, toGo: next ? Math.max(0, next.need - have) : 0 };
   }
@@ -8829,7 +8834,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     dom.issues.addEventListener('pointerenter', function () { if (play) play.issueHover = true; });
     dom.issues.addEventListener('pointerleave', function () { if (play) play.issueHover = false; });
     dom.powerFill = make('div', { class: 'meter-fill power' });
-    dom.powerBox = make('div', { class: 'hud-chip hud-power', title: 'Power used' },
+    dom.powerBox = make('div', { class: 'hud-chip hud-power', title: 'Power used (MW)' },
       make('span', { class: 'chip-ico', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z" fill="currentColor"/></svg>' }), dom.powerVal,
       level.powerCap ? make('div', { class: 'meter thin' }, dom.powerFill) : null);
     // The move chip exists only on levels with a limit; a tap shows the details (and the way to buy more).
@@ -8852,7 +8857,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     dom.sc = {};
     function scoreCell(metricKey, label) {
       dom.sc[metricKey] = make('span', { class: 'sc-v' });
-      return make('div', { class: 'sc hud-chip', 'data-metric': metricKey }, make('span', { class: 'sc-k', text: label }), dom.sc[metricKey], play.riddle || play.sandbox ? null : make('span', { class: 'sc-p', text: 'par ' + ((level.par && level.par[metricKey] != null) ? level.par[metricKey] : '-') }));
+      return make('div', { class: 'sc hud-chip', 'data-metric': metricKey }, make('span', { class: 'sc-k', text: label }), dom.sc[metricKey], play.riddle || play.sandbox ? null : make('span', { class: 'sc-p', text: '/ ' + ((level.par && level.par[metricKey] != null) ? level.par[metricKey] : '-') }));
     }
     var goal = level.goal || {};
     // One teal-framed card (Claude Design): what to deliver and how it goes, plus small chips for power, cells, cost, moves, lives, credits and Why.
@@ -8865,10 +8870,9 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('div', { class: 'hud-block hud-goal' },
         make('div', { class: 'hud-goal-head' }, iconEl('item', goal.item, 30, 'goal-ico'),
           make('div', { class: 'hud-goal-txt' }, make('span', { class: 'hud-k', text: 'Deliver ' + itemName(goal.item) }), dom.goalRate),
-          dom.holdLabel),
-        make('div', { class: 'meter', title: 'Delivery rate vs target' }, dom.meterFill, dom.meterTarget),
-        make('div', { class: 'hold-row' }, make('div', { class: 'meter thin' }, dom.holdFill)),
-        dom.issues,
+          make('div', { class: 'hud-status' }, dom.holdLabel, dom.issues)),
+        // the hold progress is a thin line along the bottom of the rate bar
+        make('div', { class: 'meter', title: 'Delivery rate vs target (thin line: hold progress)' }, dom.meterFill, dom.holdFill, dom.meterTarget),
         dom.chips));
 
     // board
@@ -10867,7 +10871,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     dom.holdLabel.textContent = label;
     dom.holdLabel.classList.toggle('warn', labelWarn);
     if (power) {
-      dom.powerVal.textContent = fmt(power.used) + (power.cap != null ? ' / ' + power.cap : '') + ' MW';
+      dom.powerVal.textContent = fmt(power.used) + (power.cap != null ? ' / ' + power.cap : '');
       if (power.cap != null) {
         dom.powerFill.style.width = (clamp(power.used / power.cap, 0, 1) * 100) + '%';
         dom.powerFill.classList.toggle('warn', power.used / power.cap >= 0.9);
@@ -11777,7 +11781,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       else if (play.sel) closePop();
       else if (play.briefOpen) setBriefOpen(false);
       else if (play.tool) selectTool(null);
-      else showList(play.level.id);
+      else openPauseMenu();   // nothing open: Back pauses; leaving happens through the menu's leave button
     } else if (screen === 'list') showTitle();
     if (screen !== 'title') armBackGuard();
   }
