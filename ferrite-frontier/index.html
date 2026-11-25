@@ -6427,24 +6427,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   var SCHEDULER_INTERVAL_MS = 120; // how often the scheduler wakes up
   var FADE_IN_SECONDS = 3;
   var FADE_OUT_SECONDS = 2.5;
-  var STEPS_PER_BAR = 16;          // sixteenth-note grid, four beats per bar
-  var STEPS_PER_CHORD = STEPS_PER_BAR * 2;
-  var MAX_TRANSIENT_NODES = 20;    // plus ~10 persistent nodes keeps the whole graph under 30
 
-  // Each mood: key root (MIDI), scale, chord roots (semitones above the key root), tempo, melody density,
-  // and a minimum "busyness" so the tougher moods always carry a little percussion.
-  var MOODS = {
-    title:     { rootMidi: 50, scale: [0, 3, 5, 7, 10],          chordRoots: [0, 8, 3, 10], bpm: 56, melodyChance: 0.22, minimumBusyness: 0 },
-    act1:      { rootMidi: 50, scale: [0, 3, 5, 7, 10],          chordRoots: [0, 3, 8, 10], bpm: 70, melodyChance: 0.26, minimumBusyness: 0 },
-    act2:      { rootMidi: 45, scale: [0, 2, 3, 5, 7, 9, 10],    chordRoots: [0, 5, 3, 10], bpm: 80, melodyChance: 0.28, minimumBusyness: 0.1 },
-    challenge: { rootMidi: 52, scale: [0, 1, 3, 5, 7, 8, 10],    chordRoots: [0, 1, 8, 5],  bpm: 96, melodyChance: 0.32, minimumBusyness: 0.25 }
-  };
-  var PAD_INTERVALS = [0, 7, 14]; // open root / fifth / ninth: calm and slightly unresolved
-
-  // ---- the new style: its own 92 bpm clock (4/4), scheduled ahead of the audio clock ----
+  // ---- 92 bpm clock (4/4), scheduled ahead of the audio clock ----
   var NEW_BPM = 92;
   var BEATS_PER_BAR = 4;
-  var STYLE_SWITCH_FADE_SECONDS = 0.3;
   var NEW_PAD_LEVEL = 0.1;
   var NEW_PAD_ATTACK_SECONDS = 2;
   // The triad stays low and warm: E3 A3 C4 for A minor, never down to A2 (a hum on small speakers).
@@ -6497,7 +6483,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   var NEW_MAIN_BARS = 16, NEW_BRIDGE_BARS = 8, NEW_DROP_BARS = 8;
   var NEW_RISER_LEVEL = 0.05, NEW_RISER_FROM_HZ = 3000, NEW_RISER_TO_HZ = 8000, NEW_RISER_TICK_SECONDS = 0.07;
   var NEW_PAD_FILTER_HZ = 700, NEW_PAD_RISER_HZ = 2400;
-  var NEW_MAX_TRANSIENT_NODES = 44;        // the new style schedules more voices at once (arpeggio, counter-melody)
+  var MAX_TRANSIENT_NODES = 44;            // the most one-shot voices alive at once (arpeggio, counter-melody)
   var NEW_PHRASES = 4;                     // a 16 bar cycle: motif, answer, varied motif, varied answer
   var BARS_PER_PHRASE = 4;
   // Motifs: one list of [eighth note position, MIDI note] per bar, four bars over the chords of the mood. Notes on beats 1
@@ -6515,16 +6501,13 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
 
   var ctx = null, outputGain = null, compressor = null, fadeGain = null, noiseBuffer = null;
   var ownsContext = false, unavailable = false;
-  var muted = false, volume = 0.8, intensity = 0, appliedIntensity = -1;
+  var muted = false, volume = 0.8, intensity = 0;
   var running = false, stopping = false;
-  var mood = null, moodName = null;
-  var style = 'original';          // 'original' or 'new'
-  var styleTimer = null;
+  var moodName = null;
   var nextBeatTime = 0, beatIndex = 0, newBarNumber = 0, melodyBars = null, bridgeBars = null, counterBars = null, currentSeed = 1;
   var arrangement = createNewArranger(), currentPlan = null, barStartTime = 0, riserStarted = false;
   var pad = null;                // persistent pad voices while music plays
   var schedulerTimer = null, teardownTimer = null;
-  var nextStepTime = 0, stepIndex = 0, chordIndex = -1, melodyPosition = 0;
   var liveTransientNodes = 0;
   var randomState = 1;
 
@@ -6541,7 +6524,6 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function clamp01(value) { value = +value; return isFinite(value) ? Math.max(0, Math.min(1, value)) : 0; }
   function unrefTimer(timer) { if (timer && typeof timer.unref === 'function') timer.unref(); return timer; }
   function ready() { return !!(ctx && outputGain && !unavailable); }
-  function busyness() { return Math.max(intensity, mood ? mood.minimumBusyness : 0); }
 
   // Disconnect a finished source and the nodes that only existed to carry it, and give their slots back.
   function releaseWhenDone(source, carriers, isTransient) {
@@ -6553,7 +6535,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       if (isTransient) liveTransientNodes -= carriers.length;
     };
   }
-  function hasRoomFor(nodeCount) { return liveTransientNodes + nodeCount <= (style === 'new' ? NEW_MAX_TRANSIENT_NODES : MAX_TRANSIENT_NODES); }
+  function hasRoomFor(nodeCount) { return liveTransientNodes + nodeCount <= MAX_TRANSIENT_NODES; }
 
   function applyOutputLevel() {
     if (!ready()) return;
@@ -6597,30 +6579,8 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   }
 
   // ---- pad (persistent, slowly evolving) ----
+  // The pad: triangle and sine only (no sawtooth), a quiet sustained chord.
   function buildPad() {
-    if (style === 'new') { buildNewPad(); return; }
-    var padFilter = ctx.createBiquadFilter();
-    padFilter.type = 'lowpass'; padFilter.frequency.value = 500; padFilter.Q.value = 0.8;
-    var padGain = ctx.createGain();
-    padGain.gain.value = 0.18;
-    padFilter.connect(padGain); padGain.connect(fadeGain);
-    var voices = PAD_INTERVALS.map(function (interval, voiceIndex) {
-      var oscillator = ctx.createOscillator();
-      oscillator.type = voiceIndex === 1 ? 'triangle' : 'sawtooth';
-      oscillator.detune.value = (voiceIndex - 1) * 7;
-      oscillator.frequency.value = 110;
-      oscillator.connect(padFilter);
-      oscillator.start();
-      return oscillator;
-    });
-    // slow filter sweep so the pad breathes
-    var sweep = ctx.createOscillator(), sweepDepth = ctx.createGain();
-    sweep.frequency.value = 0.07; sweepDepth.gain.value = 180;
-    sweep.connect(sweepDepth); sweepDepth.connect(padFilter.frequency); sweep.start();
-    pad = { voices: voices, filter: padFilter, gain: padGain, sweep: sweep, sweepDepth: sweepDepth };
-  }
-  // New style pad: triangle and sine only (no sawtooth), a quiet sustained chord, same record shape as the original pad.
-  function buildNewPad() {
     var padFilter = ctx.createBiquadFilter();
     padFilter.type = 'lowpass'; padFilter.frequency.value = NEW_PAD_FILTER_HZ; padFilter.Q.value = 0.5;
     var padGain = ctx.createGain();
@@ -6694,100 +6654,9 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       oscillator.frequency.setTargetAtTime(midiToFrequency(voicing[voiceIndex]), atTime, timeConstant);
     });
   }
-  function moveChord(newChordIndex, timeConstant) {
+  function moveChord(timeConstant) {
     if (!pad) return;
-    if (style === 'new') {
-      moveNewChord(currentPlan ? currentPlan.chordIndex : 0, currentPlan ? currentPlan.section : 'main', ctx.currentTime, timeConstant);
-      return;
-    }
-    var chordRoot = mood.rootMidi - 12 + mood.chordRoots[newChordIndex % mood.chordRoots.length];
-    var nowSeconds = ctx.currentTime;
-    pad.voices.forEach(function (oscillator, voiceIndex) {
-      oscillator.frequency.setTargetAtTime(midiToFrequency(chordRoot + PAD_INTERVALS[voiceIndex]), nowSeconds, timeConstant);
-    });
-  }
-  function applyIntensityToPad() {
-    if (!pad || style === 'new' || Math.abs(busyness() - appliedIntensity) < 0.01) return;
-    appliedIntensity = busyness();
-    var nowSeconds = ctx.currentTime;
-    pad.filter.frequency.setTargetAtTime(450 + 1100 * appliedIntensity, nowSeconds, 1.2);
-    pad.gain.gain.setTargetAtTime(0.16 + 0.1 * appliedIntensity, nowSeconds, 1.2);
-  }
-
-  // ---- one-shot voices (transient, released when done) ----
-  function playPluck(startTime, midiNote, strength) {
-    if (!hasRoomFor(2)) return;
-    var oscillator = ctx.createOscillator(), gain = ctx.createGain();
-    var duration = 1.6;
-    oscillator.type = 'triangle';
-    oscillator.frequency.value = midiToFrequency(midiNote);
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(0.22 * strength, startTime + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-    oscillator.connect(gain); gain.connect(fadeGain);
-    oscillator.start(startTime); oscillator.stop(startTime + duration + 0.05);
-    releaseWhenDone(oscillator, [oscillator, gain], true);
-  }
-  function playThump(startTime, strength) {
-    if (!hasRoomFor(2)) return;
-    var oscillator = ctx.createOscillator(), gain = ctx.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(95, startTime);
-    oscillator.frequency.exponentialRampToValueAtTime(40, startTime + 0.25);
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(0.5 * strength, startTime + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.3);
-    oscillator.connect(gain); gain.connect(fadeGain);
-    oscillator.start(startTime); oscillator.stop(startTime + 0.35);
-    releaseWhenDone(oscillator, [oscillator, gain], true);
-  }
-  function playTick(startTime, strength, brightness) {
-    if (!hasRoomFor(3)) return;
-    var source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
-    source.buffer = noiseBuffer;
-    filter.type = 'bandpass'; filter.frequency.value = brightness; filter.Q.value = 2.5;
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(0.14 * strength, startTime + 0.002);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.05);
-    source.connect(filter); filter.connect(gain); gain.connect(fadeGain);
-    source.start(startTime, random() * 1.5); source.stop(startTime + 0.08);
-    releaseWhenDone(source, [source, filter, gain], true);
-  }
-
-  // ---- composition ----
-  function pickMelodyNote() {
-    var scale = mood.scale, span = scale.length * 2; // two octaves of the scale
-    melodyPosition += Math.floor(random() * 5) - 2;  // random walk of -2..+2 scale steps
-    if (melodyPosition < 0) melodyPosition = 1;
-    if (melodyPosition >= span) melodyPosition = span - 2;
-    var octave = melodyPosition >= scale.length ? 12 : 0;
-    return mood.rootMidi + 24 + octave + scale[melodyPosition % scale.length];
-  }
-  function scheduleStep(step, startTime) {
-    var stepInBar = step % STEPS_PER_BAR;
-    var level = busyness();
-
-    var newChordIndex = Math.floor(step / STEPS_PER_CHORD);
-    if (newChordIndex !== chordIndex) {
-      chordIndex = newChordIndex;
-      moveChord(chordIndex, 1.5);
-      if (level > 0.5 && hasRoomFor(2)) { // low bass note on each new chord once the factory is busy
-        var bassRoot = mood.rootMidi - 12 + mood.chordRoots[chordIndex % mood.chordRoots.length];
-        playPluck(startTime, bassRoot, 0.9);
-      }
-    }
-
-    // sparse plucked melody on eighth notes, a little denser when busy
-    if (step % 2 === 0 && random() < mood.melodyChance + 0.1 * level) {
-      playPluck(startTime, pickMelodyNote(), 0.55 + 0.45 * random());
-    }
-
-    // soft mechanical percussion, fading in with busyness
-    if (level > 0.15) {
-      var tickChance = (stepInBar % 4 === 2 ? 0.7 : stepInBar % 2 === 0 ? 0.35 : 0.12) * (level - 0.1) * 1.3;
-      if (random() < tickChance) playTick(startTime, 0.5 + 0.5 * level, 2500 + 2500 * random());
-    }
-    if (level > 0.4 && (stepInBar === 0 || (level > 0.7 && stepInBar === 8))) playThump(startTime, 0.5 + 0.5 * level);
+    moveNewChord(currentPlan ? currentPlan.chordIndex : 0, currentPlan ? currentPlan.section : 'main', ctx.currentTime, timeConstant);
   }
 
   // The 16 bars of melody for a mood and seed, repeatable per seed: each bar is a list of {eighth, midi, held} (empty = rest).
@@ -6831,7 +6700,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (!layer || !settings) return;
     if (settings.on !== undefined) layer.on = !!settings.on;
     if (settings.level !== undefined) layer.level = Math.max(0, +settings.level || 0);
-    if (layerName === 'pad' && pad && style === 'new') pad.gain.gain.setTargetAtTime(NEW_PAD_LEVEL * layerGain('pad') * (currentPlan ? currentPlan.levelScale : 1), ctx.currentTime, 0.1);
+    if (layerName === 'pad' && pad) pad.gain.gain.setTargetAtTime(NEW_PAD_LEVEL * layerGain('pad') * (currentPlan ? currentPlan.levelScale : 1), ctx.currentTime, 0.1);
   }
   function getLayers() {
     var copy = {};
@@ -7029,7 +6898,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       playNewRiserTick(startTime + eighth * halfBeat, NEW_RISER_LEVEL * progress, NEW_RISER_FROM_HZ + (NEW_RISER_TO_HZ - NEW_RISER_FROM_HZ) * progress);
     }
   }
-  // New style transport, one call per beat.
+  // Transport, one call per beat.
   function secondsPerBeat() { return 60 / NEW_BPM; }
   function scheduleBeat(barNumber, beatInBar, startTime) {
     newBarNumber = barNumber;
@@ -7057,7 +6926,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     playNotes(plan.section === 'bridge' ? bridgeBars : melodyBars, 'melody', NEW_MELODY_LEVEL);
     if (plan.section !== 'bridge') playNotes(counterBars, 'counter', NEW_COUNTER_LEVEL);
   }
-  function newStyleTick() {
+  function tick() {
     var nowSeconds = ctx.currentTime;
     if (nextBeatTime < nowSeconds - 0.25) nextBeatTime = nowSeconds + 0.05; // timers were throttled: do not catch up in a burst
     while (nextBeatTime < nowSeconds + LOOKAHEAD_SECONDS) {
@@ -7071,19 +6940,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     schedulerTimer = null;
     if (!running || !ready()) return;
     try {
-      if (ctx.state === 'running' && style === 'new') {
-        newStyleTick();
-      } else if (ctx.state === 'running') {
-        var nowSeconds = ctx.currentTime;
-        if (nextStepTime < nowSeconds - 0.25) nextStepTime = nowSeconds + 0.05; // timers were throttled: do not catch up in a burst
-        applyIntensityToPad();
-        var stepSeconds = 60 / mood.bpm / 4;
-        while (nextStepTime < nowSeconds + LOOKAHEAD_SECONDS) {
-          scheduleStep(stepIndex, nextStepTime);
-          stepIndex++;
-          nextStepTime += stepSeconds;
-        }
-      }
+      if (ctx.state === 'running') tick();
     } catch (error) { /* never throw out of a timer */ }
     if (running) schedulerTimer = unrefTimer(setTimeout(schedulerTick, SCHEDULER_INTERVAL_MS));
   }
@@ -7092,22 +6949,21 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function start(moodKey, seed) {
     if (!ready()) return;
     try {
-      var newMood = MOODS[moodKey];
-      if (!newMood) return;
+      if (!NEW_PROGRESSIONS[moodKey]) return;
       if (running && !stopping && moodKey === moodName) return;
       if (teardownTimer) { clearTimeout(teardownTimer); teardownTimer = null; }
       var wasPlaying = running && !stopping;
-      mood = newMood; moodName = moodKey;
+      moodName = moodKey;
       stopping = false;
       if (!wasPlaying) {
         teardownPad();
         currentSeed = seed !== undefined ? seed : Math.floor(Math.random() * 4294967296);
         seedRandom(currentSeed);
-        beatIndex = 0; newBarNumber = 0; arrangement = createNewArranger(); currentPlan = null; riserStarted = false; stepIndex = 0; chordIndex = -1; melodyPosition = 3; appliedIntensity = -1;
+        beatIndex = 0; newBarNumber = 0; arrangement = createNewArranger(); currentPlan = null; riserStarted = false;
         buildPad();
-        nextStepTime = ctx.currentTime + 0.1; nextBeatTime = nextStepTime;
-        moveChord(0, 0.01);
-      } // otherwise keep playing: a mood switch just changes scale, tempo and chords, and the pad glides over
+        nextBeatTime = ctx.currentTime + 0.1;
+        moveChord(0.01);
+      } // otherwise keep playing: a mood switch just changes scale and chords, and the pad glides over
       melodyBars = buildNewMelody(moodKey, currentSeed);
       counterBars = buildNewCounterMelody(moodKey, melodyBars);
       bridgeBars = buildNewBridgeMelody(moodKey);
@@ -7115,9 +6971,8 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       fadeGain.gain.cancelScheduledValues(nowSeconds);
       fadeGain.gain.setValueAtTime(fadeGain.gain.value, nowSeconds);
       fadeGain.gain.linearRampToValueAtTime(1, nowSeconds + FADE_IN_SECONDS);
-      appliedIntensity = -1;
       if (!running) { running = true; schedulerTick(); }
-      else if (wasPlaying) moveChord(chordIndex < 0 ? 0 : chordIndex, 2);
+      else if (wasPlaying) moveChord(2);
     } catch (error) { /* never throw */ }
   }
 
@@ -7134,52 +6989,25 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       teardownTimer = unrefTimer(setTimeout(function () {
         teardownTimer = null;
         if (!stopping) return;
-        stopping = false; moodName = null; mood = null;
+        stopping = false; moodName = null;
         try { teardownPad(); } catch (error) { /* ignore */ }
       }, (FADE_OUT_SECONDS + 0.2) * 1000));
     } catch (error) { /* never throw */ }
   }
 
-  // Switch between 'original' and 'new'. While music plays: fade the old style out (about 0.3 s), stop its scheduler and
-  // voices, then start the new style on the same context. Never creates a second AudioContext.
-  function setStyle(newStyle) {
-    if (newStyle !== 'original' && newStyle !== 'new') return;
-    if (newStyle === style) return;
-    var wasPlaying = ready() && running && !stopping;
-    style = newStyle;
-    if (!wasPlaying) return; // the next start() uses the new style
-    try {
-      running = false;
-      if (schedulerTimer) { clearTimeout(schedulerTimer); schedulerTimer = null; }
-      var nowSeconds = ctx.currentTime;
-      fadeGain.gain.cancelScheduledValues(nowSeconds);
-      fadeGain.gain.setValueAtTime(fadeGain.gain.value, nowSeconds);
-      fadeGain.gain.linearRampToValueAtTime(0, nowSeconds + STYLE_SWITCH_FADE_SECONDS);
-      if (styleTimer) clearTimeout(styleTimer);
-      styleTimer = unrefTimer(setTimeout(function () {
-        styleTimer = null;
-        if (running || stopping) return; // something else already restarted or stopped the music
-        try { teardownPad(); } catch (error) { /* ignore */ }
-        var resumeMood = moodName;
-        moodName = null; mood = null;
-        if (resumeMood) start(resumeMood);
-      }, (STYLE_SWITCH_FADE_SECONDS + 0.05) * 1000));
-    } catch (error) { /* never throw */ }
-  }
-  function getStyle() { return style; }
 
   function setIntensity(level) {
     intensity = clamp01(level);
-    // the UI may call this every frame: the pad only changes when the level moved noticeably (see applyIntensityToPad)
+    // the UI may call this every frame: it only stores the level, the arrangement reads it at each bar line
   }
   // The drop: from the next bar line every layer plays for eight bars, with a short riser before; then the factory's busyness rules again.
-  function drop() { if (style === 'new') arrangement.requestDrop(); }
+  function drop() { arrangement.requestDrop(); }
   function setVolume(level) { volume = clamp01(level); applyOutputLevel(); }
   function setMuted(shouldMute) { muted = !!shouldMute; try { applyOutputLevel(); } catch (error) { /* ignore */ } }
   function isMuted() { return muted; }
 
   FF.music = { init: init, start: start, stop: stop, setIntensity: setIntensity, setVolume: setVolume, setMuted: setMuted, isMuted: isMuted,
-    setStyle: setStyle, getStyle: getStyle, setLayer: setLayer, getLayers: getLayers, newBeatEvents: newBeatEvents,
+    setLayer: setLayer, getLayers: getLayers, newBeatEvents: newBeatEvents,
     drop: drop, newCounterMelody: buildNewCounterMelody, newBridgeMelody: buildNewBridgeMelody, newLayerMix: newLayerMix,
     newChordNames: function (moodKey, sectionName) { return progressionFor(moodKey, sectionName).slice(); },
     stepArrangement: function (busynessValue) { return arrangement.nextBar(busynessValue); }, resetArrangement: function () { arrangement = createNewArranger(); }, newPadVoicings: newPadVoicings, newMelody: buildNewMelody,
@@ -7310,7 +7138,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (audioReady) return;
     audioReady = true;
     try { if (audioApi.init) audioApi.init(); if (audioApi.setMuted) audioApi.setMuted(!!SAVE.muted); } catch (error) { /* ignore */ }
-    if (FF.music) { musicCall('init'); musicCall('setStyle', settings().musicStyle); applyMusicMute(); musicCall('start', musicMood); }
+    if (FF.music) { musicCall('init'); applyMusicMute(); musicCall('start', musicMood); }
     applySettings();
   }
   function isMuted() { return !!SAVE.muted; }
@@ -10668,7 +10496,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var current = SAVE.settings;
     if (!current || typeof current !== 'object') current = SAVE.settings = {};
     if (typeof current.musicVolume !== 'number') current.musicVolume = 0.8;
-    if (current.musicStyle !== 'new') current.musicStyle = 'original'; // 'original' or 'new'; saves without the field get 'original'
+    delete current.musicStyle; // the old style choice is gone: there is one style
     if (typeof current.soundVolume !== 'number') current.soundVolume = 1;
     if (current.haptics !== false) current.haptics = true;
     if (current.reducedMotion !== true && current.reducedMotion !== false) current.reducedMotion = null; // null = follow device
@@ -10682,7 +10510,6 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function applySettings() {
     var current = settings(), reduce = reducedMotion();
     musicCall('setVolume', clamp(current.musicVolume, 0, 1));
-    musicCall('setStyle', current.musicStyle);
     try {
       if (audioApi.setVolume) audioApi.setVolume(clamp(current.soundVolume, 0, 1));
       else if (audioApi.setMuted) audioApi.setMuted(!!SAVE.muted || current.soundVolume <= 0); // no volume control: 0 = off
@@ -10973,11 +10800,6 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var hapticToggle = make('input', { type: 'checkbox', 'aria-label': 'Haptics' });
     hapticToggle.checked = current.haptics !== false;
     hapticToggle.addEventListener('change', function () { current.haptics = hapticToggle.checked; persist(); if (current.haptics) haptic('place'); });
-    var musicStyleSelect = make('select', { 'aria-label': 'Music style' },
-      make('option', { value: 'original', text: 'Original' }),
-      make('option', { value: 'new', text: 'New' }));
-    musicStyleSelect.value = current.musicStyle;
-    musicStyleSelect.addEventListener('change', function () { current.musicStyle = musicStyleSelect.value; persist(); applySettings(); sfx('click'); });
     var confirmRow = make('div', { class: 'set-confirm', hidden: true },
       make('span', { text: 'Erase every best score, saved layout and unlocked contract? This cannot be undone.' }),
       make('button', { class: 'btn small danger', type: 'button', onclick: function () { resetProgress(); } }, 'Erase progress'),
@@ -10995,7 +10817,6 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         make('label', { class: 'set-row' }, make('span', { class: 'set-label', text: 'All sound' }), make('span', { class: 'set-control' }, muteToggle)),
         FF.music ? make('label', { class: 'set-row' }, make('span', { class: 'set-label', text: 'Music' }), make('span', { class: 'set-control' }, musicToggle)) : null,
         FF.music ? slider('Music volume', current.musicVolume, function (value) { current.musicVolume = value; applySettings(); }) : null,
-        FF.music ? make('label', { class: 'set-row' }, make('span', { class: 'set-label', text: 'Music style' }), make('span', { class: 'set-control' }, musicStyleSelect)) : null,
         slider('Sound effects volume', current.soundVolume, function (value) { current.soundVolume = value; applySettings(); },
           audioApi.setVolume ? null : 'This build can only switch effects off (0%) or on')),
       make('section', { class: 'set-group' },
