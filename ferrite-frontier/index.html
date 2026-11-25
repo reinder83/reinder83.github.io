@@ -236,6 +236,19 @@ button, .tool, .contract { touch-action: manipulation; }
 .lives-chip.low { border-color: var(--amber); }
 .lives-chip.out { border-color: var(--red); background: rgba(255, 91, 78, 0.1); }
 .sheet-back-moves { z-index: 22; }
+.perk-back { z-index: 60; }
+.hud-wallet { display: flex; align-self: center; flex: 0 0 auto; }
+.hud-wallet .lives-chip { border-radius: 99px 0 0 99px; border-right-width: 0; }
+.hud-wallet .credits-chip { border-radius: 0 99px 99px 0; }
+.credits-chip { align-self: center; flex: 0 0 auto; min-height: 34px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--panel); color: var(--amber-2); font-family: var(--font-mono); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.perk-list { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 12px; }
+.perk-card { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel-2); }
+.perk-card.soon { opacity: 0.85; }
+.perk-card.owned { border-color: var(--teal); }
+.perk-card h3 { margin: 0 0 4px; font-size: 16px; }
+.perk-card p { margin: 4px 0; color: var(--text-2); }
+.perk-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.perk-price { font-family: var(--font-mono); color: var(--text-2); }
 .modal-actions.stack { flex-direction: column; align-items: stretch; }
 .modal-actions.stack .btn { min-height: 44px; }
 .buy-rows { margin: 8px 0 12px; border: 1px solid var(--line); border-radius: var(--r); }
@@ -349,6 +362,7 @@ button, .tool, .contract { touch-action: manipulation; }
 .tool-glyph svg { width: 22px; height: 22px; }
 .tool-remove .tool-glyph { color: var(--red); }
 .tool-rot .tool-glyph { color: var(--teal-2); }
+.rot-arrow { transition: transform 0.12s; }
 .tool-sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 2px; }
 
 /* modal */
@@ -421,6 +435,7 @@ button, .tool, .contract { touch-action: manipulation; }
   .hud-power .meter { width: 24px; }
   .moves-chip, .lives-chip { min-height: 28px; padding: 2px 7px; font-size: 11px; }
   .lives-chip { letter-spacing: 0; padding: 2px 6px; }
+  .credits-chip { min-height: 28px; padding: 2px 6px; font-size: 11px; }
   .sc { flex-direction: row; gap: 4px; padding: 2px 4px; }
   .sc-v { font-size: 14px; }
   .sc-p { display: none; }
@@ -442,7 +457,8 @@ button, .tool, .contract { touch-action: manipulation; }
   .tool-glyph { width: 26px; height: 26px; }
   /* bottom sheets: building inspector / recipe picker never sit under the finger */
   .pop.sheet { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-width: none; transform: none !important; z-index: 15; background: var(--panel); box-shadow: 0 -12px 40px #000c;
-    border-radius: 14px 14px 0 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); max-height: 62vh; overflow-y: auto; }
+    border-radius: 14px 14px 0 0; padding: 14px 16px 14px; max-height: 48vh; overflow-y: auto; }
+  .pop.sheet.dock-top { border-radius: 0 0 14px 14px; box-shadow: 0 12px 40px #000c; }
   .pop.sheet .recipe-opt { padding: 10px 10px; }
   .pop.sheet .pop-actions .btn { min-height: 42px; }
   .pop-x { width: 40px; height: 40px; font-size: 24px; }
@@ -1916,12 +1932,19 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
     lifePrice: 30            // price of one extra life
   };
 
+  // Perks bought with credits (#136). `built` is false until the feature behind a perk exists: it shows as coming soon
+  // and cannot be bought. Meeting M5 decided only one perk, the "why isn't this working?" view (#41).
+  var perks = [
+    { id: 'why-view', name: 'The “why isn’t this working?” view', price: 60, built: false,
+      text: 'Highlights the machines that hold a factory back and traces what each one is missing.' }
+  ];
+
   // The act where each system starts (1 = Act I ... 4 = Act IV); matches the chapter folders act1 to act4.
   var rollout = {
     lives: 2,                // lives and move limits start in Act II
     moves: 2,
-    credits: 3,              // credits and perks start in Act III
-    perks: 3,
+    credits: 1,              // credits are EARNED from Act I on (meeting M2): first completions and medals pay in every act
+    perks: 3,                // perks can be bought from Act III on
     streak: 4                // the daily streak starts in Act IV
   };
 
@@ -1953,8 +1976,27 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
     return act === 0 || act >= rollout.lives;
   }
 
+  // Earning: from the credits rollout act (Act I) on. Levels outside the acts (surveys, challenges) pay too.
+  function creditsActive(level) {
+    var act = actOf(level);
+    return act === 0 || act >= rollout.credits;
+  }
+  // Perks can be bought from the perks rollout act (Act III) on.
+  function perksActive(level) {
+    return actOf(level) >= rollout.perks;
+  }
+
+  function perkById(id) {
+    for (var index = 0; index < perks.length; index++) if (perks[index].id === id) return perks[index];
+    return null;
+  }
+
   return {
     lives: lives,
+    perks: perks,
+    perkById: perkById,
+    creditsActive: creditsActive,
+    perksActive: perksActive,
     moves: moves,
     credits: credits,
     rollout: rollout,
@@ -2093,7 +2135,49 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
     return { ok: true, reason: null, gained: gained };
   }
 
-  return { version: VERSION, defaultEconomy: defaultEconomy, normalizeEconomy: normalizeEconomy, trustedTime: trustedTime, normalizeRun: normalizeRun,
+  // ---- credits and perks (#136). Same pattern: change the economy, return a result, the caller persists.
+  function addCredits(economy, amount, deviceTime) {
+    var gain = Math.max(0, Math.floor(amount) || 0);
+    if (gain) { economy.credits += gain; touch(economy, deviceTime); }
+    return gain;
+  }
+  // Spends from the economy balance only (never a level run's creditsSpent, which counts bought move bundles).
+  function spendCredits(economy, amount, deviceTime) {
+    var cost = Math.floor(amount);
+    if (!isFinite(cost) || cost < 0 || economy.credits < cost) return false;
+    if (cost) { economy.credits -= cost; touch(economy, deviceTime); }
+    return true;
+  }
+  // The medal tier of a level's best: how many of the cells, cost and power medals (at or under par) it holds.
+  // 0 to 3 = none, bronze, silver, gold.
+  function medalTier(best, par) {
+    var count = 0;
+    ['cells', 'cost', 'power'].forEach(function (metric) {
+      if (best && par && typeof best[metric] === 'number' && typeof par[metric] === 'number' && best[metric] <= par[metric]) count++;
+    });
+    return count;
+  }
+  // Credits a completion pays: the first-completion reward, plus each medal tier newly reached. paidTier is the highest
+  // tier already paid for the level, so a tier never pays twice. Returns { credits, tier }.
+  function completionReward(first, paidTier, tier) {
+    var amounts = [0, config.credits.medalBronze, config.credits.medalSilver, config.credits.medalGold];
+    var credits = first ? config.credits.firstCompletion : 0;
+    for (var step = Math.max(0, paidTier) + 1; step <= tier; step++) credits += amounts[step];
+    return { credits: credits, tier: Math.max(paidTier, tier) };
+  }
+  function hasPerk(economy, id) { return economy.perks.indexOf(id) >= 0; }
+  // Buys a perk: refused when unknown, not built yet, already owned or too expensive.
+  function buyPerk(economy, id, deviceTime) {
+    var perk = config.perkById(id);
+    if (!perk || !perk.built || hasPerk(economy, id)) return false;
+    if (!spendCredits(economy, perk.price, deviceTime)) return false;
+    economy.perks.push(id);
+    touch(economy, deviceTime);
+    return true;
+  }
+
+  return { version: VERSION, addCredits: addCredits, spendCredits: spendCredits, medalTier: medalTier, completionReward: completionReward,
+    hasPerk: hasPerk, buyPerk: buyPerk, defaultEconomy: defaultEconomy, normalizeEconomy: normalizeEconomy, trustedTime: trustedTime, normalizeRun: normalizeRun,
     addLives: addLives, refillLives: refillLives, spendLife: spendLife, buyLife: buyLife, dayKey: dayKey, dailyBlock: dailyBlock, claimDaily: claimDaily };
 });
 
@@ -6935,6 +7019,9 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     // Hearts sit next to the moves chip from Act II on; Act I and playtests show none. A tap opens the lives sheet.
     dom.livesChip = !livesActive(level) ? null : make('button', { class: 'lives-chip', type: 'button', 'data-lives-chip': '1', title: 'Lives: tap for details',
       onclick: function () { sfx('click'); showLivesSheet(); } });
+    // The credit balance sits beside the lives from the rollout act on; a tap opens the perk sheet.
+    dom.creditsChip = playtestSession || !(economyConfig.perksActive(level) || creditBalance() > 0) ? null : make('button', { class: 'credits-chip', type: 'button', 'data-credits-chip': '1', title: 'Credits: tap for perks',
+      onclick: function () { sfx('click'); openPerkSheet(); } });
     dom.sc = {};
     function scoreCell(metricKey, label) {
       dom.sc[metricKey] = make('span', { class: 'sc-v' });
@@ -6950,7 +7037,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         dom.issues),
       dom.powerBox,
       dom.movesChip,
-      dom.livesChip,
+      (dom.livesChip && dom.creditsChip) ? make('div', { class: 'hud-wallet' }, dom.livesChip, dom.creditsChip) : (dom.livesChip || dom.creditsChip),
       make('div', { class: 'hud-block hud-score' }, scoreCell('cells', 'Cells'), scoreCell('cost', 'Cost'), scoreCell('power', 'MW'))
     );
 
@@ -6968,7 +7055,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var toolEls = tools.map(function (type, index) {
       var button = make('button', { class: 'tool', type: 'button', 'data-tool': type, 'aria-pressed': 'false',
         title: bName(type) + ' (' + (index + 1) + ') - cost ' + (bDef(type).cost || 0) + ', ' + (bDef(type).power || 0) + ' MW',
-        onclick: function () { ensureAudio(); selectTool(play.tool === type ? null : type); } },
+        onclick: function (event) { ensureAudio(); selectTool(toggleOff(event, type) ? null : type); } },
         make('span', { class: 'tool-key', text: index < 9 ? String(index + 1) : '' }),
         iconEl('building', type, 34, 'tool-ico'),
         make('span', { class: 'tool-name', text: bName(type) }),
@@ -6977,14 +7064,14 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       return button;
     });
     dom.toolBtns.remove = make('button', { class: 'tool tool-remove', type: 'button', 'aria-pressed': 'false', title: 'Remove tool (X). Right-click or long-press also removes.',
-      onclick: function () { ensureAudio(); selectTool(play.tool === 'remove' ? null : 'remove'); } },
+      onclick: function (event) { ensureAudio(); selectTool(toggleOff(event, 'remove') ? null : 'remove'); } },
       make('span', { class: 'tool-key', text: 'X' }),
       make('span', { class: 'tool-glyph', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>' }),
       make('span', { class: 'tool-name', text: 'Remove' }), make('span', { class: 'tool-meta', text: 'refund' }));
     dom.rotBtn = make('button', { class: 'tool tool-rot', type: 'button', title: 'Rotate (R / E clockwise, Q counter-clockwise)',
       onclick: function () { ensureAudio(); rotateAction(1); } },
       make('span', { class: 'tool-key', text: 'R' }),
-      make('span', { class: 'tool-glyph rot-glyph', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l3 3-3 3" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 6H11a6 6 0 106 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>' }),
+      make('span', { class: 'tool-glyph rot-glyph', html: '<svg class="rot-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
       make('span', { class: 'tool-name', text: 'Rotate' }), dom.rotDir = make('span', { class: 'tool-meta', text: 'east' }));
     // The toolbar wrappers keep desktop and compact layouts grouped while allowing compact grids.
     dom.toolbar = make('nav', { class: 'toolbar', 'aria-label': 'Buildings' },
@@ -7186,6 +7273,26 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     }
     if (gained) livesChanged();
     return gained;
+  }
+  // Credits (#136). Earned from Act I on (never in playtests); spending on perks starts in Act III. A first completion pays once; each medal tier (1, 2 or 3
+  // of the cells, cost and power medals at par) pays once per level: the highest tier paid is kept in the level record.
+  function creditsActive(level) { return !playtestSession && economyConfig.creditsActive(level); }
+  function awardCredits(level, first) {
+    if (!creditsActive(level)) return 0;
+    var record = rec(level.id);
+    var tier = economyState.medalTier(record.best || {}, level.par || {});
+    var paid = typeof record.medalTier === 'number' ? record.medalTier : 0;
+    var reward = economyState.completionReward(first, paid, tier);
+    record.medalTier = reward.tier;
+    var gained = economyState.addCredits(SAVE.economy, reward.credits, Date.now());
+    persist();
+    if (play) updateHUD(true);
+    return gained;
+  }
+  function paintCredits(chip) {
+    var text = '\u25C6 ' + creditBalance();
+    if (chip.textContent !== text) chip.textContent = text;
+    chip.setAttribute('aria-label', 'Credits: ' + creditBalance() + '. Tap for the perks.');
   }
   function scheduleOutOfMoves(delay) {
     var current = play;
@@ -7442,9 +7549,14 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (tool && tool !== 'remove' && play.tools.indexOf(tool) < 0) return;
     play.tool = tool;
     play.ghostKey = '';
-    if (tool) closePop();
+    if (tool) { closePop(); if (play.briefOpen) setBriefOpen(false); }
     sfx(tool ? 'select' : 'click');
     paintTools();
+  }
+  // A tap on the held tool keeps it held on touch and compact layouts (a tap meant to "pick" must never drop it);
+  // only a mouse click on a wide screen toggles it off. Back, Escape and the other keys still deselect.
+  function toggleOff(event, tool) {
+    return play.tool === tool && !!event && event.pointerType === 'mouse' && !isCompact() && play.pointerType === 'mouse';
   }
   function paintTools() {
     if (!play) return;
@@ -7464,6 +7576,8 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (!play || !play.dom.rotDir) return;
     var screenDir = (play.dir + (play.rotated ? 1 : 0)) % 4;
     play.dom.rotDir.textContent = SCREEN_ARROWS[screenDir] + ' ' + dirWord(play.dir);
+    var arrow = play.dom.rotBtn && play.dom.rotBtn.querySelector('.rot-arrow');
+    if (arrow) { arrow.style.transform = 'rotate(' + screenDir * 90 + 'deg)'; arrow.setAttribute('data-dir', String(screenDir)); }
   }
   // Direction as the player sees it on screen.
   function dirWord(dir) { return ['up', 'right', 'down', 'left'][(dir + (play && play.rotated ? 1 : 0)) % 4]; }
@@ -7844,6 +7958,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     }
     if (MACHINE[building.type]) html += bufferRows(building);
     if (building.type === 'belt' || building.type === 'belt2') html += '<div class="tt-sub">Up to ' + (building.type === 'belt2' ? 120 : 60) + ' items/min · heading ' + dirWord(building.dir) + '</div>';
+    else if (building.dir !== undefined && building.type !== 'splitter') html += '<div class="tt-sub">Facing ' + dirWord(building.dir) + '</div>';
     if (building.type === 'splitter') html += '<div class="tt-sub">Back in; front/left/right out in turn · 120/min</div>';
     if (building.type === 'sorter') {
       html += '<div class="tt-row"><span class="tt-k">Filter</span><span class="tt-v">' + iconHTML('item', building.filter, 16) + esc(itemName(building.filter)) + '</span></div>';
@@ -7975,7 +8090,24 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     // phones and touch: a bottom sheet, so the finger and the building stay visible
     var sheet = isCompact() || play.pointerType === 'touch';
     pop.classList.toggle('sheet', sheet);
-    if (sheet) { pop.style.transform = ''; return; }
+    if (sheet) {
+      // The sheet lives inside the board area (never over the toolbar). It sits at the bottom edge, or at the top edge
+      // when the selected building would be hidden by it, so the building you rotate stays in view.
+      pop.style.transform = '';
+      var area = dom.boardWrap.getBoundingClientRect(), canvasBox = dom.canvas.getBoundingClientRect();
+      var spot = cellCenterOnCanvas(play.sel), half = spot.cellPixels / 2 + 6;
+      var cellTop = canvasBox.top + spot.y - half, cellBottom = canvasBox.top + spot.y + half;
+      var sheetHeight = pop.offsetHeight;
+      var coverBottom = Math.max(0, cellBottom - (area.bottom - sheetHeight));
+      var coverTop = Math.max(0, (area.top + sheetHeight) - cellTop);
+      var atTop = coverBottom > 0 && coverTop < coverBottom;
+      pop.style.left = area.left + 'px'; pop.style.right = (window.innerWidth - area.right) + 'px';
+      pop.style.bottom = atTop ? 'auto' : (window.innerHeight - area.bottom) + 'px';
+      pop.style.top = atTop ? area.top + 'px' : 'auto';
+      pop.classList.toggle('dock-top', atTop);
+      return;
+    }
+    pop.style.left = ''; pop.style.right = ''; pop.style.top = ''; pop.style.bottom = ''; pop.classList.remove('dock-top');
     var canvasRect = dom.canvas.getBoundingClientRect(), wrapRect = dom.boardWrap.getBoundingClientRect();
     var center = cellCenterOnCanvas(play.sel), cellPixels = center.cellPixels;
     var centerX = canvasRect.left - wrapRect.left + center.x, centerY = canvasRect.top - wrapRect.top + center.y;
@@ -8047,11 +8179,12 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       var par = play.level.par || {}, bestBefore = rec(play.level.id).best || {};
       var hadAllMedal = medalKinds(bestBefore, par).all;
       var recordResult = recordSuccess(play.level, score);
+      recordResult.creditsGained = awardCredits(play.level, false);
       var hasAllMedal = medalKinds(rec(play.level.id).best || {}, par).all;
       if (!hadAllMedal && hasAllMedal) celebrateSuccess(score, recordResult, true);
       else if (recordResult.any) {
         sfx('success');
-        toast('Verified new best: ' + score.cells + ' cells · $' + score.cost + ' · ' + score.power + ' MW', 'good');
+        toast('Verified new best: ' + score.cells + ' cells · $' + score.cost + ' · ' + score.power + ' MW' + (recordResult.creditsGained ? ' · +' + recordResult.creditsGained + ' credits' : ''), 'good');
       } else play.dom.status.textContent = 'Layout verified: meets contract';
     }
     updateHUD(true);
@@ -8061,6 +8194,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var lockedBefore = lockedIds();
     var result = recordSuccess(play.level, score);
     result.livesGained = awardLives(play.level, result.first);
+    result.creditsGained = awardCredits(play.level, result.first);
     var lockedAfter = lockedIds(), newChapters = [];
     LEVELS.forEach(function (level) {
       var chapter = chapterOf(level);
@@ -8130,6 +8264,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         make('thead', null, make('tr', null, make('th', null, ''), make('th', { text: 'This run' }), make('th', { text: 'Par' }), make('th', { text: 'Best' }))),
         make('tbody', null, rows)),
       (result.newChapters && result.newChapters.length) ? make('p', { class: 'modal-unlock', text: 'Unlocked: ' + result.newChapters.join(', ') + '.' }) : null,
+      result.creditsGained ? make('p', { class: 'modal-unlock credits-gain', text: '+' + result.creditsGained + ' credits. You have ' + creditBalance() + '.' }) : null,
       result.livesGained ? make('p', { class: 'modal-unlock lives-gain', text: (result.livesGained === 1 ? '+1 life' : '+' + result.livesGained + ' lives') + '. You have ' + livesNow() + '.' }) : null,
       make('div', { class: 'modal-actions' },
         make('button', { class: 'btn', type: 'button', onclick: function () { sfx('click'); closeModal(); } }, 'Keep optimizing'),
@@ -8164,6 +8299,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       dom.movesChip.setAttribute('aria-label', 'Moves used ' + play.movesUsed + ' of ' + play.moveLimit + ', ' + Math.max(0, movesLeft) + ' left. Tap for details.');
     }
     if (dom.livesChip) paintLives(dom.livesChip);
+    if (dom.creditsChip) paintCredits(dom.creditsChip);
     var scale = target * 1.5;
     dom.meterFill.style.width = (clamp(rate / scale, 0, 1) * 100) + '%';
     dom.meterFill.classList.toggle('ok', rate >= target);
@@ -8539,6 +8675,71 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       onclick: function () { ensureAudio(); sfx('click'); openOverlay('handbook'); }, text: '?' });
   }
 
+  // ------------------------------------------------------------------ the perk sheet (#136)
+  // A bottom sheet on a phone (a centred card on desktop) opened from Settings or the credits chip. A perk is bought
+  // through a confirm sheet; the credits come off SAVE.economy.credits only, never the level run's creditsSpent.
+  var perkSheetNode = null;
+  function perksUnlocked() {
+    if (SAVE.economy.credits > 0 || SAVE.economy.perks.length) return true;
+    return LEVELS.some(function (level, index) { return economyConfig.perksActive(level) && levelUnlocked(index); });
+  }
+  function closePerkSheet() {
+    if (perkSheetNode && perkSheetNode.parentNode) perkSheetNode.parentNode.removeChild(perkSheetNode);
+    perkSheetNode = null;
+  }
+  function showPerkCard(card, focusNode) {
+    if (!perkSheetNode) {
+      perkSheetNode = make('div', { class: 'modal-back sheet-back-moves perk-back', onclick: function (event) { if (event.target === perkSheetNode) closePerkSheet(); } });
+      document.body.appendChild(perkSheetNode);
+    }
+    perkSheetNode.innerHTML = '';
+    perkSheetNode.appendChild(card);
+    setTimeout(function () { try { if (focusNode) focusNode.focus({ preventScroll: true }); } catch (error) { /* ignore */ } }, 30);
+  }
+  function openPerkSheet() {
+    var balance = creditBalance();
+    var cards = economyConfig.perks.map(function (perk) {
+      var owned = economyState.hasPerk(SAVE.economy, perk.id), affordable = balance >= perk.price;
+      var label = owned ? 'Owned' : !perk.built ? 'Coming soon' : 'Buy for ' + perk.price + ' credits';
+      var button = make('button', { class: 'btn' + (owned || !perk.built ? '' : ' primary'), type: 'button', 'data-act': 'buy-perk', 'data-perk': perk.id, disabled: owned || !perk.built || !affordable,
+        onclick: function () { sfx('click'); showPerkConfirm(perk); } }, label);
+      return make('div', { class: 'perk-card' + (owned ? ' owned' : '') + (perk.built ? '' : ' soon'), 'data-perk-card': perk.id },
+        make('h3', { text: perk.name }),
+        make('p', { text: perk.text }),
+        make('div', { class: 'perk-foot' }, make('span', { class: 'perk-price', text: perk.price + ' credits' }), button),
+        perk.built && !owned && !affordable ? make('p', { class: 'buy-short', text: 'Not enough credits: you have ' + balance + '.' }) : null);
+    });
+    var closeButton = make('button', { class: 'btn', type: 'button', 'data-act': 'close-perks', onclick: function () { sfx('click'); closePerkSheet(); } }, 'Close');
+    var card = make('div', { class: 'modal sheet-card perk-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ff-perk-h', 'data-sheet': 'perks' },
+      make('div', { class: 'eyebrow', text: 'Perks' }),
+      make('h2', { id: 'ff-perk-h', text: balance + ' credits' }),
+      make('p', { class: 'modal-sub', text: 'Perks are bought once, with credits earned from first completions and medals.' }),
+      make('div', { class: 'perk-list' }, cards),
+      make('div', { class: 'modal-actions' }, closeButton));
+    showPerkCard(card, closeButton);
+  }
+  function showPerkConfirm(perk) {
+    var balance = creditBalance();
+    if (!perk.built || economyState.hasPerk(SAVE.economy, perk.id) || balance < perk.price) return;
+    var confirmButton = make('button', { class: 'btn primary', type: 'button', 'data-act': 'confirm-perk', onclick: function () {
+      if (!economyState.buyPerk(SAVE.economy, perk.id, Date.now())) return;
+      persist(); if (play) updateHUD(true); sfx('click');
+      toast(perk.name + ' unlocked.', 'good');
+      openPerkSheet();
+    } }, 'Buy perk');
+    var card = make('div', { class: 'modal sheet-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ff-perk-h', 'data-sheet': 'buy-perk' },
+      make('div', { class: 'eyebrow', text: 'Confirm purchase' }),
+      make('h2', { id: 'ff-perk-h', text: perk.name }),
+      make('div', { class: 'buy-rows' },
+        make('div', { class: 'buy-row' }, make('span', { text: 'Price' }), make('b', { class: 'buy-price', text: perk.price + ' credits' })),
+        make('div', { class: 'buy-row' }, make('span', { text: 'Your balance' }), make('b', { class: 'buy-balance', text: balance + ' credits' })),
+        make('div', { class: 'buy-row' }, make('span', { text: 'Balance after' }), make('b', { text: (balance - perk.price) + ' credits' }))),
+      make('div', { class: 'modal-actions' },
+        make('button', { class: 'btn', type: 'button', 'data-act': 'cancel-perk', onclick: function () { sfx('click'); openPerkSheet(); } }, 'Not now'),
+        confirmButton));
+    showPerkCard(card, confirmButton);
+  }
+
   // ------------------------------------------------------------------ overlays: handbook and settings
   // Full-screen on phones, a centred scrolling panel on desktop. The game pauses underneath; Back/Esc close them.
   var overlayKind = null, overlayNode = null, overlayPausedGame = false;
@@ -8565,6 +8766,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function closeOverlay(fromBack) {
     if (!overlayKind) return;
     overlayKind = null;
+    closePerkSheet();
     if (play && play.confirm) showConfirm(false);
     if (overlayNode && overlayNode.parentNode) overlayNode.parentNode.removeChild(overlayNode);
     overlayNode = null;
@@ -8625,6 +8827,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('section', { class: 'set-group' },
         make('h3', { text: 'Display' }),
         make('label', { class: 'set-row' }, make('span', { class: 'set-label' }, 'Motion', make('small', { text: 'Reduced: calm effects, no confetti or screen sweeps, still banners' })), make('span', { class: 'set-control' }, motionSelect))),
+      perksUnlocked() ? make('section', { class: 'set-group perk-settings' },
+        make('h3', { text: 'Perks' }),
+        make('p', { class: 'set-note', text: 'Credits: ' + creditBalance() + '. Spend them on perks.' }),
+        make('button', { class: 'btn small', type: 'button', 'data-act': 'open-perks', onclick: function () { sfx('click'); openPerkSheet(); } }, 'Open the perk sheet')) : null,
       make('section', { class: 'set-group' },
         make('h3', { text: 'Progress' }),
         make('p', { class: 'set-note', text: 'Saved in this browser only (' + (getStorage() ? 'storage available' : 'storage is blocked here, so nothing is kept after closing') + ').' }),
