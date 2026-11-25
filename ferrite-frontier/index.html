@@ -1066,6 +1066,40 @@ button.cal-cell:hover:not(:disabled) { border-color: var(--amber); }
 .map-side.inline.left { left: 0; }
 .map-side.inline .side-cap { display: none; }
 @media (prefers-reduced-motion: reduce) { .contract:active .c-num { transform: none; } }
+.map-row.current.has-side { height: 232px; }
+.map-row .map-side.inline.low { top: auto; bottom: 8px; transform: none; }
+.side-tile { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 72px; min-height: 64px; padding: 8px 6px 6px; border: 0; border-radius: 16px; background: rgba(30, 24, 46, 0.92); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--line-2), 0 3px 0 #100c18; cursor: pointer; }
+.side-tile.right { right: 12px; }
+.side-tile.left { left: 12px; }
+.side-tile.low { top: auto; bottom: 8px; transform: none; }
+.side-tile.done { box-shadow: inset 0 0 0 1.5px var(--teal), 0 3px 0 #100c18; }
+.side-tile:active { transform: translateY(-50%) translateY(2px); }
+.side-tile.low:active { transform: translateY(2px); }
+.st-gems { display: flex; height: 22px; align-items: center; }
+.st-gem { display: block; width: 14px; height: 14px; margin: 0 -1px; border-radius: 3px; transform: rotate(45deg); background: var(--kind, var(--violet)); box-shadow: 0 2px 0 var(--kind-lip, #5b43b0); }
+.st-gem.riddle { --kind: var(--violet); --kind-lip: #5b43b0; }
+.st-gem.bonus { --kind: #f4a93b; --kind-lip: #9c5810; }
+.st-gem.survey { --kind: #5ab0ff; --kind-lip: #24609a; }
+.st-gem.challenge { --kind: #ff7aa8; --kind-lip: #a3315f; }
+.side-tile.done .st-gem { --kind: var(--teal); --kind-lip: var(--teal-lip); }
+.side-tile.locked .st-gem { --kind: #2a2340; --kind-lip: #100c18; }
+.st-cap { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); line-height: 1.1; text-align: center; }
+.st-count { font-family: var(--font-display); font-weight: 800; font-size: 16px; line-height: 1; }
+.side-sheet .side-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; }
+.side-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 4px 10px 4px 4px; border: 0; border-radius: 14px; background: var(--bg-deep); color: var(--text); text-align: left; cursor: pointer; }
+.side-row .side-chip { flex: none; pointer-events: none; }
+.side-row .sr-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-row .sr-name { font-weight: 600; overflow-wrap: anywhere; }
+.side-row .sr-goal, .side-row .sr-lock { font-size: 12px; color: var(--text-2); }
+.side-row .sr-state { flex: none; font-size: 12px; font-weight: 600; color: var(--amber); }
+.side-row.done .sr-state { color: var(--teal-2); }
+.side-row.locked { color: var(--text-3); cursor: default; }
+.side-row.locked .sr-state { color: var(--text-3); }
+.map-row.has-both { height: 168px; }
+.map-row.current.has-both { height: 276px; }
+.map-row .map-side.inline.at-after, .map-row .side-tile.at-after { top: 6px; bottom: auto; transform: none; }
+.map-row .map-side.inline.at-before, .map-row .side-tile.at-before { top: auto; bottom: 6px; transform: none; }
+.side-tile.at-after:active, .side-tile.at-before:active { transform: translateY(2px); }
 
 </style>
 </head>
@@ -7700,9 +7734,17 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (playtestSession) return;
     if (economyState.grandfatherActs(SAVE.economy, actCtx())) persist();
   }
-  // "Contract 07" for acts (numbered across acts), "Challenge 02" for challenges.
+  // The place of a main contract along the whole campaign path (act by act, in path order), 1-based; 0 for anything off the path.
+  function campaignNumber(id) {
+    var count = 0, found = 0;
+    actsApi.list().forEach(function (act) { act.contracts.forEach(function (contractId) { count++; if (contractId === id && !found) found = count; }); });
+    return found;
+  }
+  // "Contract 07" for acts (numbered along the campaign path, not by id digits),"Challenge 02" for challenges.
   function contractLabel(levelIndex) {
     var level = LEVELS[levelIndex], number = 0;
+    var pathNumber = campaignNumber(level.id);
+    if (pathNumber) return 'Contract ' + String(pathNumber).padStart(2, '0');
     var idDigits = /(\d+)\s*$/.exec(String(level.id));
     if (idDigits) return kindWord(level) + ' ' + String(+idDigits[1]).padStart(2, '0');
     for (var index = 0; index <= levelIndex; index++) if (isChallenge(LEVELS[index]) === isChallenge(level)) number++;
@@ -8205,6 +8247,53 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('div', { class: 'side-chips' }, items.map(makeSideChip)));
   }
 
+  // One compact tile for a crowd of side puzzles: a few diamonds in the colours of what is inside, and how many are solved. A tap opens the list sheet.
+  function makeSideTile(items, anchorName) {
+    var done = items.filter(function (item) { return sideItemState(item) === 'done'; }).length;
+    var open = items.filter(function (item) { return sideItemState(item) === 'open'; });
+    var tone = done === items.length ? 'done' : open.length ? 'open' : 'locked';
+    var kinds = [];
+    (open.length ? open : items).forEach(function (item) { if (kinds.indexOf(item.kind) < 0) kinds.push(item.kind); });
+    var gems = make('span', { class: 'st-gems', 'aria-hidden': 'true' }, kinds.slice(0, 3).map(function (kind) { return make('i', { class: 'st-gem ' + kind }); }));
+    return make('button', { class: 'side-tile ' + tone, type: 'button', 'data-side-tile': String(items.length),
+      'aria-label': 'Side puzzles, ' + done + ' of ' + items.length + ' solved. Opens the list.', 'aria-haspopup': 'dialog',
+      onclick: function () { sfx('click'); showSideSheet(items, anchorName); } },
+      gems, make('span', { class: 'st-cap', text: 'Side puzzles' }), make('span', { class: 'st-count', text: done + '/' + items.length }));
+  }
+  // The goal line of a side item: the rate it wants, or "Riddle".
+  function sideGoalText(item) {
+    if (item.kind === 'riddle') return 'Riddle';
+    var goal = item.level && item.level.goal;
+    return goal && goal.item ? fmt(goal.rate) + ' ' + itemName(goal.item) + ' / min' : SIDE_KIND_NAME[item.kind];
+  }
+  // The list sheet behind a tile: every item with its type icon, name, goal, state and (when locked) what opens it. An open item starts on a tap.
+  function showSideSheet(items, anchorName) {
+    var done = items.filter(function (item) { return sideItemState(item) === 'done'; }).length;
+    var closeButton = make('button', { class: 'btn primary', type: 'button', 'data-act': 'close-sheet', onclick: function () { sfx('click'); closeSheet(); } }, 'Close');
+    var list = make('ul', { class: 'side-list' }, items.map(function (item) {
+      var state = sideItemState(item), locked = state === 'locked';
+      var hint = locked ? (item.kind === 'riddle' ? riddleLockHint(item.id) : lockHint(item.index)) : '';
+      var attrs = { class: 'side-row ' + item.kind + ' ' + state, type: 'button', 'aria-disabled': locked ? 'true' : null,
+        'aria-label': SIDE_KIND_NAME[item.kind] + ': ' + item.name + ', ' + sideGoalText(item) + (state === 'done' ? ', solved' : locked ? ', locked. ' + hint : ''),
+        onclick: function () {
+          if (locked) return;
+          closeSheet();
+          if (item.kind === 'riddle') startRiddle(item.id); else { ensureAudio(); sfx('select'); startLevel(item.index); }
+        } };
+      attrs[item.kind === 'riddle' ? 'data-riddle-id' : 'data-id'] = item.id;
+      return make('li', null, make('button', attrs,
+        make('span', { class: 'side-chip ' + item.kind + ' ' + state, 'aria-hidden': 'true' }, make('span', { class: 'sc-gem' }, make('span', { class: 'sc-glyph', text: state === 'done' ? '\u2713' : locked ? '' : SIDE_GLYPH[item.kind] }))),
+        make('span', { class: 'sr-text' }, make('b', { class: 'sr-name', text: item.name }), make('span', { class: 'sr-goal', text: SIDE_KIND_NAME[item.kind] + ' \u00b7 ' + sideGoalText(item) }),
+          locked ? make('span', { class: 'sr-lock', text: hint }) : null),
+        make('span', { class: 'sr-state', text: state === 'done' ? 'Solved' : locked ? 'Locked' : 'Open' })));
+    }));
+    var card = make('div', { class: 'modal sheet-card side-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ff-sheet-h', 'data-sheet': 'side-puzzles' },
+      make('h2', { id: 'ff-sheet-h', text: 'Side puzzles' }),
+      make('p', { class: 'modal-sub', text: (anchorName ? 'Next to ' + anchorName + '. ' : '') + done + ' of ' + items.length + ' solved.' }),
+      list, make('div', { class: 'modal-actions' }, closeButton));
+    showSheet(card, closeButton);
+  }
+
   function makeContractNode(level, levelIndex, x, current) {
     var record = SAVE.levels[level.id] || {}, state = record.done ? 'done' : levelUnlocked(levelIndex) ? 'open' : 'locked';
     var best = record.best || {}, par = level.par || {}, number = contractLabel(levelIndex).replace(/^\D+/, '');
@@ -8345,29 +8434,32 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   function buildActMap(act) {
     var introKeys = {}, stage = make('div', { class: 'map-stage', 'data-act': String(act.number) });
     var items = sideItemsOf(act), rows = [], points = [], currentIndex = currentContractIndex(act);
-    function cluster(contractId, at, side) {
-      var chosen = items.filter(function (item) { return item.anchor.id === contractId && item.anchor.at === at; });
-      if (chosen.length) { stage.appendChild(makeSideCluster(chosen, side)); if (chosen.some(function (item) { return item.kind === 'riddle'; })) introKeys.riddles = true; }
-    }
     var skipped = makeSkippedCard(act.number);
     if (skipped) stage.appendChild(skipped);
     var lastPoint = null, nodeCount = 0;
     act.contracts.forEach(function (contractId, position) {
       var level = levelById(contractId), levelIndex = level ? LEVELS.indexOf(level) : -1;
       if (!level) return;
-      var x = NODE_X[nodeCount % NODE_X.length], current = levelIndex === currentIndex, previousX = lastPoint ? lastPoint.x : x;
-      var near = items.filter(function (item) { return item.anchor.id === contractId; }), inline = !current && near.length > 0 && near.length <= 2;
-      if (!inline) cluster(contractId, 'before', (x + previousX) / 2 < 50 ? 'right' : 'left');
-      var row = make('div', { class: 'map-row' + (current ? ' current' : '') });
+      var x = NODE_X[nodeCount % NODE_X.length], current = levelIndex === currentIndex;
+      // Side items sit beside their node on the edge away from the path. Items that come before the node (below it) and after it (above)
+      // are two groups: 1-3 items as diamonds, more as one tile that opens a list. Two groups stack in a taller row.
+      var groups = ['after', 'before'].map(function (at) {
+        return { at: at, list: items.filter(function (item) { return item.anchor.id === contractId && item.anchor.at === at; }) };
+      }).filter(function (group) { return group.list.length > 0; });
+      var row = make('div', { class: 'map-row' + (current ? ' current' : '') + (groups.length ? ' has-side' : '') + (groups.length > 1 ? ' has-both' : '') });
       var node = makeContractNode(level, levelIndex, x, current);
       row.appendChild(node);
       if (current) row.appendChild(makeCurrentCallout(level, x));
-      if (inline) { var small = makeSideCluster(near, x < 50 ? 'right' : 'left'); small.className += ' inline'; row.appendChild(small); if (near.some(function (item) { return item.kind === 'riddle'; })) introKeys.riddles = true; }
+      var away = x < 50 ? 'right' : 'left';
+      groups.forEach(function (group) {
+        var element = group.list.length <= 3 ? makeSideCluster(group.list, away) : makeSideTile(group.list, level.name);
+        element.className += ' inline ' + away + (groups.length > 1 ? ' at-' + group.at : current ? ' low' : '');
+        row.appendChild(element);
+        if (group.list.some(function (item) { return item.kind === 'riddle'; })) introKeys.riddles = true;
+      });
       stage.appendChild(row);
       var done = levelDone(level), point = { x: x, row: row, solid: !!lastPoint && lastPoint.done && (done || current) };
       point.done = done; points.push(point); lastPoint = point; nodeCount++;
-      var nextX = NODE_X[nodeCount % NODE_X.length];
-      if (!inline) cluster(contractId, 'after', (x + nextX) / 2 < 50 ? 'right' : 'left');
     });
     if (!act.contracts.length && items.length) stage.appendChild(makeSideCluster(items, 'left'));
     var end = makeGateCard(act) || (actsApi.upcoming ? makeMoreSoon() : null);
