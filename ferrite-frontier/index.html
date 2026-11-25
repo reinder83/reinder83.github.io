@@ -298,7 +298,9 @@ button, .tool, .contract { touch-action: manipulation; }
 .tut { margin: 4px 0 8px; padding-left: 18px; color: var(--text-2); max-width: 900px; }
 .tut li { margin: 2px 0; }
 .hint-text { margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid var(--amber); background: rgba(242, 165, 49, 0.08); color: var(--amber-2); max-width: 900px; }
-.brief-actions { display: flex; gap: 8px; }
+.brief-actions { display: flex; gap: 8px; flex: none; }
+/* the text scrolls above a footer that never does (#248); the local/scroll gradients fade the edge that has more text */
+.brief-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 
 
 .moves-chip { align-self: center; flex: 0 0 auto; min-height: 34px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text); font-family: var(--font-mono); font-size: 13px; cursor: pointer; white-space: nowrap; }
@@ -378,6 +380,7 @@ button, .tool, .contract { touch-action: manipulation; }
 .ro-name { grid-area: name; font-weight: 600; }
 .ro-rate { grid-area: rate; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
 .ro-line { grid-area: line; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+.pop-more { display: none; }
 .pop-actions { display: flex; gap: 6px; margin-top: 10px; }
 .pop-actions .btn { flex: 1; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -799,15 +802,33 @@ button, .tool, .contract { touch-action: manipulation; }
   .credits-chip { min-height: 28px; padding: 2px 6px; font-size: 11px; }
   .why-btn { min-height: 28px; padding: 2px 7px; font-size: 11px; }
   /* the brief floats over the board as a sheet instead of pushing it down */
-  .side > .brief { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 8; max-height: 60%; overflow: auto;
+  .side > .brief { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 8; max-height: 60%; overflow: hidden; display: flex; flex-direction: column;
     border: 1px solid var(--line-2); border-radius: 10px; background: rgba(27, 23, 38, 0.97); box-shadow: 0 12px 40px #000a; font-size: 13.5px; }
+  .side > .brief .brief-scroll {
+    background: linear-gradient(#1b1726 30%, rgba(27, 23, 38, 0)) 0 0 / 100% 18px no-repeat local,
+    linear-gradient(rgba(27, 23, 38, 0), #1b1726 70%) 0 100% / 100% 18px no-repeat local,
+    linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0)) 0 0 / 100% 10px no-repeat scroll,
+    linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.45)) 0 100% / 100% 10px no-repeat scroll;
+  }
   .play-main { flex: 1 1 auto; min-height: 0; }
   .board-wrap { flex: 1 1 auto; min-height: 0; }
   /* Portrait tools wrap into two rows; the thumb controls keep the bottom-right slots. */
   /* bottom sheets: building inspector / recipe picker never sit under the finger */
   .pop.sheet { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-width: none; transform: none !important; z-index: 15; background: var(--panel); box-shadow: 0 -12px 40px #000c;
-    border-radius: 14px 14px 0 0; padding: 14px 16px 14px; max-height: 48vh; overflow-y: auto; }
+    border-radius: 14px 14px 0 0; overflow-y: auto; }
   .pop.sheet.dock-top { border-radius: 0 0 14px 14px; box-shadow: 0 12px 40px #000c; }
+  .pop.sheet { padding: 8px 12px 10px; }
+  .pop.sheet .pop-info { padding-right: 36px; }
+  .pop.sheet .tt-title { margin-bottom: 0; }
+  .pop.sheet .pop-now .tt-row { display: inline-flex; margin: 0 6px 0 0; }
+  .pop.sheet .pop-now .tt-sub { display: inline; }
+  .pop.sheet:not(.show-details) .pop-details { display: none; }
+  .pop.sheet:not(.show-recipes) .pop-recipes { display: none; }
+  .pop.sheet .pop-more { display: flex; gap: 6px; margin-top: 6px; }
+  .pop.sheet .pop-toggle { background: transparent; border: 1px solid var(--line-2); border-radius: var(--r-sm); color: var(--text-2); font-size: 12px; padding: 4px 10px; min-height: 32px; cursor: pointer; }
+  .pop.sheet .pop-toggle[aria-expanded="true"] { border-color: var(--amber); color: var(--text); }
+  .pop.sheet .pop-actions { margin-top: 6px; position: sticky; bottom: -10px; padding-bottom: 10px; margin-bottom: -10px; background: var(--panel); }
+  .pop.sheet .pop-h { margin: 6px 0 4px; }
   .pop.sheet .recipe-opt { padding: 10px 10px; }
   .pop.sheet .pop-actions .btn { min-height: 42px; }
   .pop-x { width: 40px; height: 40px; font-size: 24px; }
@@ -3354,12 +3375,14 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
 // Save layout (format 2): { format, changedAt, changeCount, levels, economy, daily, riddles, intros, muted, musicOff, settings, ...unknown keys }
 //   format       2. A save without it is format 1 (the original storage key, still the same key): migrated in place on load, never wiped.
 //   changedAt    ms time of the last persist; changeCount counts persists. Both are bookkeeping for a later sync, never used to pick winners here.
-//   levels       { id: { done, seen, tutSeen, best: { cells, cost, power }, medalTier, layout, run } }
+//   levels       { id: { done, seen, tutSeen, best: { cells, cost, power }, medalTier, layout, run, bestLayout } }
+//   bestLayout   { medals, cells, cost, power, layout: [placements] }: the build of the best win (#227), kept apart from the working `layout`. See betterBestLayout for the rule.
 //   economy      see src/economy-state.js;  daily: see src/daily-state.js;  riddles: { solved: [ids] };  intros: { key: true }
 // Export code: "FF2." + base64url(JSON of the state, ASCII only) + "." + checksum. A bad, damaged or newer code is refused with a readable message.
 //
 // MERGE RULES, merge(local, remote), per field:
 //   levels:   done is true if either is; best cells/cost/power keep the lower (better) value; medalTier keeps the higher; seen and tutSeen are true if either is.
+//             bestLayout keeps the better one by betterBestLayout (more medals, then lower cost, cells, power), whichever side or economy winner it came from.
 //   economy:  the side with the newer updatedAt wins as a whole (economyState.mergeEconomy); latestTimeSeen takes the larger value.
 //             Per-level run records (movesUsed, creditsSpent) and the saved layout follow the winning economy side; if it has none, the other side's is kept.
 //   daily:    solved days are the union (the later solve time is kept); bankVersion takes the larger value.
@@ -3396,9 +3419,27 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
     if (isObject(raw)) Object.keys(raw).forEach(function (key) { if (raw[key] === true && isIntroKey(key)) seen[key] = true; });
     return seen;
   }
+  function validBestLayout(value) { return isObject(value) && Array.isArray(value.layout); }
+  // Which best layout is better: more medals first, then lower cost, then fewer cells, then lower power. A tie keeps `first`.
+  // Why: medals are what the player chases; cost, cells and power then follow the order the contracts list them. One whole run is kept, never a mix.
+  function betterBestLayout(first, second) {
+    if (!validBestLayout(first)) return validBestLayout(second) ? second : undefined;
+    if (!validBestLayout(second)) return first;
+    var keys = ['medals', 'cost', 'cells', 'power'];
+    for (var index = 0; index < keys.length; index++) {
+      var key = keys[index], missing = key === 'medals' ? 0 : Infinity;
+      var a = typeof first[key] === 'number' ? first[key] : missing, b = typeof second[key] === 'number' ? second[key] : missing;
+      if (a !== b) return (key === 'medals' ? b > a : b < a) ? second : first;
+    }
+    return first;
+  }
   function normalizeLevels(raw) {
     var levels = {};
-    if (isObject(raw)) Object.keys(raw).forEach(function (id) { if (isObject(raw[id])) levels[id] = raw[id]; });
+    if (isObject(raw)) Object.keys(raw).forEach(function (id) {
+      if (!isObject(raw[id])) return;
+      levels[id] = raw[id];
+      if (levels[id].bestLayout !== undefined && !validBestLayout(levels[id].bestLayout)) { levels[id] = Object.assign({}, levels[id]); delete levels[id].bestLayout; }
+    });
     return levels;
   }
 
@@ -3440,6 +3481,8 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
       var source = winner[field] !== undefined ? winner : other;
       if (source[field] === undefined) delete merged[field]; else merged[field] = source[field];
     });
+    var bestLayout = betterBestLayout(local.bestLayout, remote.bestLayout);
+    if (bestLayout === undefined) delete merged.bestLayout; else merged.bestLayout = bestLayout;
     return merged;
   }
   function mergeDaily(local, remote) {
@@ -3550,7 +3593,7 @@ if (typeof module !== 'undefined') module.exports = FF.engine;
   }
 
   return { STORE_KEY: STORE_KEY, FORMAT: FORMAT, INTRO_KEYS: INTRO_KEYS, create: create, normalize: normalize, merge: merge,
-    createCode: createCode, parseCode: parseCode, normalizeRiddles: normalizeRiddles, normalizeIntros: normalizeIntros };
+    createCode: createCode, parseCode: parseCode, normalizeRiddles: normalizeRiddles, normalizeIntros: normalizeIntros, betterBestLayout: betterBestLayout };
 });
 
 </script>
@@ -7594,8 +7637,16 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
         record.best[metric] = value; any = true;
       }
     });
+    // The build of the best win (#227): replaces the stored one only when this run is better by FF.save.betterBestLayout (medals, cost, cells, power).
+    var candidate = { medals: medalTotal(score, level.par), cells: score.cells, cost: score.cost, power: score.power, layout: placements().map(plainPlacement) };
+    if (candidate.layout.length && FF.save.betterBestLayout(record.bestLayout, candidate) === candidate) record.bestLayout = candidate;
     persist();
     return { first: first, improved: improved, any: any };
+  }
+  // The placements of the player's best win of a level, or null if there is none (older saves, levels not won). A fresh copy. For the home background (#228).
+  function bestLayoutOf(id) {
+    var record = SAVE.levels[id], best = record && record.bestLayout;
+    return best && Array.isArray(best.layout) ? JSON.parse(JSON.stringify(best.layout)) : null;
   }
 
   // ------------------------------------------------------------------ small helpers
@@ -8816,9 +8867,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     // brief card
     dom.hintText = make('p', { class: 'hint-text', hidden: true, text: level.hint || 'No hint for this one. Trust the numbers.' });
     dom.brief = make('section', { class: 'brief', 'aria-label': 'Contract brief' },
+      make('div', { class: 'brief-scroll' },
       make('p', { class: 'brief-text', text: level.brief || '' }),
       ((level.tutorial && level.tutorial.length) || play.undoIntro) ? make('ul', { class: 'tut' }, (level.tutorial || []).concat(play.undoIntro ? [UNDO_LINE] : []).map(function (line) { return make('li', { text: line }); })) : null,
-      dom.hintText,
+      dom.hintText),
       make('div', { class: 'brief-actions' },
         play.riddle ? null : make('button', { class: 'btn small', type: 'button', onclick: function () { sfx('click'); dom.hintText.hidden = !dom.hintText.hidden; this.textContent = dom.hintText.hidden ? 'Show hint' : 'Hide hint'; } }, 'Show hint'),
         make('button', { class: 'btn small primary', type: 'button', onclick: function () { sfx('click'); setBriefOpen(false); } }, 'Got it')));
@@ -9884,7 +9936,14 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var screenDir = (play.dir + (play.rotated ? 1 : 0)) % 4;
     play.dom.rotDir.textContent = SCREEN_ARROWS[screenDir] + ' ' + dirWord(play.dir);
     var arrow = play.dom.rotBtn && play.dom.rotBtn.querySelector('.rot-arrow');
-    if (arrow) { arrow.style.transform = 'rotate(' + screenDir * 90 + 'deg)'; arrow.setAttribute('data-dir', String(screenDir)); }
+    if (arrow) {
+      // A running angle, so every turn animates the short way: left (270) to up goes on to 360, not back through 180.
+      var target = screenDir * 90, previous = typeof arrow.ffAngle === 'number' ? arrow.ffAngle : target;
+      var angle = previous + ((((target - previous) % 360) + 540) % 360 - 180);
+      arrow.ffAngle = angle;
+      arrow.style.transform = 'rotate(' + angle + 'deg)';
+      arrow.setAttribute('data-dir', String(screenDir));
+    }
   }
   // Direction as the player sees it on screen.
   function dirWord(dir) { return ['up', 'right', 'down', 'left'][(dir + (play && play.rotated ? 1 : 0)) % 4]; }
@@ -10372,9 +10431,10 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     if (why) html += '<div class="tt-sub st-why st-' + esc(building.status) + '">' + esc(why) + '</div>';
     html += whyHTML(x, y);
     if (building.recipe && recipeDef(building.recipe)) {
-      html += '<div class="tt-row"><span class="tt-k">Recipe</span><span class="tt-v recipe">' + recipeLine(building.recipe) + '</span></div>';
-      html += '<div class="tt-sub">' + recipeRates(building.recipe) + '</div>';
+      html += '<div class="pop-now"><div class="tt-row"><span class="tt-k">Recipe</span><span class="tt-v recipe">' + recipeLine(building.recipe) + '</span></div>';
+      html += '<div class="tt-sub">' + recipeRates(building.recipe) + '</div></div>';
     }
+    html += '<div class="pop-details">';
     if (MACHINE[building.type]) html += bufferRows(building);
     if (building.type === 'belt' || building.type === 'belt2') html += '<div class="tt-sub">Up to ' + (building.type === 'belt2' ? 120 : 60) + ' items/min · heading ' + dirWord(building.dir) + '</div>';
     else if (building.dir !== undefined && building.type !== 'splitter') html += '<div class="tt-sub">Facing ' + dirWord(building.dir) + '</div>';
@@ -10393,7 +10453,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     }
     if (typeof building.ratePerMin === 'number') html += '<div class="tt-row"><span class="tt-k">Rated</span><span class="tt-v">' + fmt(building.ratePerMin) + '/min</span></div>';
     if (typeof building.progress === 'number' && MACHINE[building.type]) html += '<div class="tt-prog"><i style="width:' + Math.round(clamp(building.progress, 0, 1) * 100) + '%"></i></div>';
-    return html;
+    return html + '</div>';
   }
 
   function hideTip() { if (play) { play.dom.tip.classList.remove('show'); play.tipKey = ''; } }
@@ -10439,6 +10499,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     hideTip();
     var dom = play.dom, pop = dom.pop;
     pop.innerHTML = '';
+    pop.classList.remove('show-recipes', 'show-details');
     var existing = placementAt(cell.x, cell.y);
     dom.popInfo = make('div', { class: 'pop-info' });
     var closeBtn = make('button', { class: 'pop-x', type: 'button', 'aria-label': 'Close', onclick: function () { closePop(); } }, '×');
@@ -10469,6 +10530,15 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
           })));
         pop.appendChild(dom.popFilters);
       } else dom.popFilters = null;
+      var moreRow = make('div', { class: 'pop-more' });
+      var addToggle = function (label, cls, attr) {
+        var toggle = make('button', { class: 'pop-toggle', type: 'button', 'aria-expanded': 'false', 'data-act': attr, text: label,
+          onclick: function () { var on = pop.classList.toggle(cls); toggle.setAttribute('aria-expanded', on ? 'true' : 'false'); positionPop(); } });
+        moreRow.appendChild(toggle);
+      };
+      if (dom.popRecipes) addToggle('Change recipe', 'show-recipes', 'pop-recipes');
+      addToggle('Details', 'show-details', 'pop-details');
+      pop.insertBefore(moreRow, dom.popRecipes || dom.popFilters || null);
       pop.appendChild(make('div', { class: 'pop-actions' },
         make('button', { class: 'btn small', type: 'button', onclick: function () { ensureAudio(); var selected = placementAt(cell.x, cell.y); if (selected) rotateBuilding(selected, 1); } }, 'Rotate'),
         make('button', { class: 'btn small danger', type: 'button', onclick: function () { removeAt(cell.x, cell.y); } }, 'Remove')));
@@ -10510,16 +10580,17 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
     var sheet = isCompact() || play.pointerType === 'touch';
     pop.classList.toggle('sheet', sheet);
     if (sheet) {
-      // The sheet lives inside the board area (never over the toolbar). It sits at the bottom edge, or at the top edge
-      // when the selected building would be hidden by it, so the building you rotate stays in view.
+      // The sheet lives inside the board area (never over the toolbar). It sits at the board edge farther from the
+      // selected cell; if it still reaches the cell (plus a margin) it shrinks and scrolls inside, so the building
+      // you rotate is never covered.
       pop.style.transform = '';
+      pop.style.maxHeight = '';
       var area = dom.boardWrap.getBoundingClientRect(), canvasBox = dom.canvas.getBoundingClientRect();
-      var spot = cellCenterOnCanvas(play.sel), half = spot.cellPixels / 2 + 6;
+      var spot = cellCenterOnCanvas(play.sel), half = spot.cellPixels / 2 + 8;
       var cellTop = canvasBox.top + spot.y - half, cellBottom = canvasBox.top + spot.y + half;
-      var sheetHeight = pop.offsetHeight;
-      var coverBottom = Math.max(0, cellBottom - (area.bottom - sheetHeight));
-      var coverTop = Math.max(0, (area.top + sheetHeight) - cellTop);
-      var atTop = coverBottom > 0 && coverTop < coverBottom;
+      var roomAbove = Math.max(0, cellTop - area.top), roomBelow = Math.max(0, area.bottom - cellBottom);
+      var atTop = roomAbove > roomBelow, room = atTop ? roomAbove : roomBelow;
+      if (pop.offsetHeight > room) pop.style.maxHeight = room + 'px';
       pop.style.left = area.left + 'px'; pop.style.right = (window.innerWidth - area.right) + 'px';
       pop.style.bottom = atTop ? 'auto' : (window.innerHeight - area.bottom) + 'px';
       pop.style.top = atTop ? area.top + 'px' : 'auto';
@@ -11551,7 +11622,11 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
       make('section', { class: 'set-group' },
         make('h3', { text: 'Progress' }),
         make('p', { class: 'set-note', text: 'Saved in this browser only (' + (getStorage() ? 'storage available' : 'storage is blocked here, so nothing is kept after closing') + ').' }),
-        resetButton, confirmRow), buildSaveCodeSection(), plotActions);
+        resetButton, confirmRow), buildSaveCodeSection(),
+      make('section', { class: 'set-group privacy-group' }, make('h3', { text: 'Privacy' }),
+        make('p', { class: 'set-note', text: 'The game collects nothing; your progress stays on this device.' }),
+        make('a', { class: 'btn small', href: 'https://reinder83.github.io/ferrite-frontier/privacy.html', target: '_blank', rel: 'noopener', 'data-act': 'privacy-policy' }, 'Privacy policy')),
+      plotActions);
   }
   // Save code (#38): copy a text code, paste it on another device. Importing combines it with this device's save
   // (best scores and finished contracts of both are kept) and asks first; a bad code shows a message and changes nothing.
@@ -11826,7 +11901,7 @@ var FF = (typeof globalThis !== 'undefined' ? globalThis : window).FF = (globalT
   // _state and _debug exist for the browser-driven tests (tests/review-ui.test.mjs); the game does not use them.
   FF.ui = { boot: boot, playLevel: playLevel, playRiddle: playRiddle, playSandbox: playSandbox, playDaily: startDaily, _state: function () { return { screen: screen, play: play }; },
     _debug: { undoStep: undoStep, redoStep: redoStep, setNow: function (ms) { dailyClock = ms == null ? null : Number(ms); }, openDaily: openDailySheet, startLevel: startLevel, showList: showList, showTitle: showTitle, layoutChanged: layoutChanged, commitPath: commitPath, sketchPath: sketchPath, commitSketch: commitSketch, toggleSketch: toggleSketch, handleBack: handleBack,
-      levels: function () { return LEVELS; }, save: function () { return SAVE; } } };
+      bestLayoutOf: bestLayoutOf, levels: function () { return LEVELS; }, save: function () { return SAVE; } } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
